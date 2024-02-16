@@ -6,9 +6,9 @@ CFLAGS = -g -std=c++20 -I. \
 		 -pthread
 # -fsanitize=address -fsanitize=undefined 
 
-all: main
+all: life3d
 
-main: main.cpp
+life3d: main.cpp
 	$(CC) $(CFLAGS) $(SLEEP) -o $@ $^
 
 %.o: %.cpp %.hpp
@@ -18,7 +18,7 @@ run: server/ems
 	@./server/ems
 
 clean:
-	rm -f *.o main
+	rm -f *.o life3d
 
 format:
 	clang-format -i *.cpp *.hpp
