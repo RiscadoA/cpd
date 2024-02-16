@@ -9,7 +9,7 @@ CFLAGS = -g -std=c++20 -I. \
 
 all: life3d
 
-life3d: main.cpp
+life3d: life3d.cpp
 	$(CC) $(CFLAGS) $(SLEEP) -o $@ $^
 
 %.o: %.cpp %.hpp
