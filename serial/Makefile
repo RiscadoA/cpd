@@ -14,9 +14,6 @@ life3d: main.cpp
 %.o: %.cpp %.hpp
 	$(CC) $(CFLAGS) -c ${@:.o=.cpp} -o $@
 
-run: server/ems
-	@./server/ems
-
 clean:
 	rm -f *.o life3d
 
