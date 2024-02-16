@@ -51,9 +51,7 @@ public:
   /// @param y Y coordinate of the cell.
   /// @param z Z coordinate of the cell.
   /// @return Cell at the given position.
-  unsigned char &cell(int x, int y, int z) {
-    return this->cell(x, y, z, mActive);
-  }
+  unsigned char &cell(int x, int y, int z) { return this->cell(x, y, z, mActive); }
 
   /// @brief Returns the cell at the given position.
   /// @param x X coordinate of the cell.
@@ -62,8 +60,7 @@ public:
   /// @param buffer Buffer to read from.
   /// @return Cell at the given position.
   unsigned char &cell(int x, int y, int z, int buffer) {
-    return mCells[x + y * mSide + z * mSide * mSide +
-                  buffer * mSide * mSide * mSide];
+    return mCells[x + y * mSide + z * mSide * mSide + buffer * mSide * mSide * mSide];
   }
 
   void forEachNeighbour(int x, int y, int z, auto lambda) {
@@ -130,9 +127,8 @@ public:
             }
 
             // Count each species in the neighborhood.
-            forEachNeighbour(x, y, z, [&](int nx, int ny, int nz) {
-              counter[cell(nx, ny, nz, mActive)] += 1;
-            });
+            forEachNeighbour(
+                x, y, z, [&](int nx, int ny, int nz) { counter[cell(nx, ny, nz, mActive)] += 1; });
 
             // Set the cell to the most common species.
             next = 1;
@@ -163,8 +159,7 @@ private:
 /// @return Whether the arguments were parsed successfully.
 static bool parseArguments(int argc, char **argv, Arguments &arguments) {
   if (argc != 5) {
-    std::cerr << "Usage: " << argv[0]
-              << " <generations> <cube side> <density> <seed>" << std::endl;
+    std::cerr << "Usage: " << argv[0] << " <generations> <cube side> <density> <seed>" << std::endl;
     return false;
   }
 
