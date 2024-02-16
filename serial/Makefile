@@ -1,0 +1,24 @@
+CC = g++
+
+CFLAGS = -g -std=c++20 -I. \
+		 -Wall -Wextra \
+		 -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-enum -Wundef -Wunreachable-code -Wunused \
+		 -pthread
+# -fsanitize=address -fsanitize=undefined 
+
+all: main
+
+main: main.cpp
+	$(CC) $(CFLAGS) $(SLEEP) -o $@ $^
+
+%.o: %.cpp %.hpp
+	$(CC) $(CFLAGS) -c ${@:.o=.cpp} -o $@
+
+run: server/ems
+	@./server/ems
+
+clean:
+	rm -f *.o main
+
+format:
+	clang-format -i *.cpp *.hpp
