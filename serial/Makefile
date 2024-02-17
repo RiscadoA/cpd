@@ -1,10 +1,16 @@
 CC = g++
 
-CFLAGS = -std=c++20 -I. -O3 \
+CFLAGS = -std=c++20 -I. \
 		 -fopenmp \
 		 -Wall -Wextra \
 		 -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-enum -Wundef -Wunreachable-code -Wunused \
 		 -pthread
+
+ifeq ($(DEBUG), 1)
+    CFLAGS += -g -O0 -fsanitize=address -fsanitize=undefined
+else
+	CFLAGS += -O3
+endif
 
 all: life3d
 

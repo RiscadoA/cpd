@@ -12,9 +12,12 @@
       in
       {
         devShell = pkgs.mkShell {
+          hardeningDisable = [ "fortify" ];
+
           packages = with pkgs; [
             gcc
             clang-tools
+            linuxKernel.packages.linux_6_1.perf
           ];
         };
       });
