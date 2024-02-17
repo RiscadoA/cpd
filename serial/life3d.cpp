@@ -2,7 +2,7 @@
 #include <iostream>
 #include <omp.h>
 
-static constexpr int NSpecies = 9;
+static constexpr unsigned char NSpecies = 9;
 
 /// @brief Generates random numbers.
 class Random {
@@ -14,11 +14,12 @@ public:
   /// @brief Returns the next random number.Random
   /// @return Random number.
   float next() {
-    int prev = mSeed;
+    auto prev = static_cast<int>(mSeed);
     mSeed ^= (mSeed << 13);
     mSeed ^= (mSeed >> 17);
     mSeed ^= (mSeed << 5);
-    return 0.5 + 0.2328306e-09 * (prev + (int)mSeed);
+    return static_cast<float>(0.5 +
+                              0.2328306e-09 * static_cast<double>(prev + static_cast<int>(mSeed)));
   }
 
 private:
@@ -30,7 +31,7 @@ struct Arguments {
   int generations;
   int side;
   float density;
-  int seed;
+  unsigned int seed;
 };
 
 /// @brief Stores a 3D GOL World.
@@ -44,13 +45,13 @@ public:
     auto bigSide = static_cast<std::size_t>(side);
     mCells = new unsigned char[bigSide * bigSide * bigSide * 2];
 
-    for (int i = 0; i < NSpecies; i++) {
-      mMaxCounter[i] = std::make_pair(0, 0);
+    for (int i = 0; i <= NSpecies; i++) {
+      mMaxCounter[i] = {0, 0};
     }
   }
 
   /// @brief Returns the side length of the 3D world.
-  std::size_t side() const { return mSide; }
+  int side() const { return mSide; }
 
   /// @brief Returns the active buffer.
   int active() const { return mGeneration % 2; }
@@ -99,7 +100,7 @@ public:
       for (int y = 0; y < mSide; ++y) {
         for (int x = 0; x < mSide; ++x) {
           if (random.next() < density) {
-            cell(x, y, z) = static_cast<int>(random.next() * NSpecies) + 1;
+            cell(x, y, z) = static_cast<unsigned char>(random.next() * NSpecies) + 1;
           } else {
             cell(x, y, z) = 0;
           }
@@ -139,7 +140,7 @@ public:
 
             // Set the cell to the most common species.
             next = 1;
-            for (int i = 2; i <= NSpecies; i++) {
+            for (unsigned char i = 2; i <= NSpecies; i++) {
               if (counter[i] > counter[next]) {
                 next = i;
               }
@@ -152,8 +153,8 @@ public:
     }
 
     for (int i = 1; i <= NSpecies; i++) {
-      if (maxCounter[i] > mMaxCounter[i].first) {
-        mMaxCounter[i] = std::make_pair(maxCounter[i], mGeneration);
+      if (maxCounter[i] > mMaxCounter[i].count) {
+        mMaxCounter[i] = {maxCounter[i], mGeneration};
       }
     }
 
@@ -163,15 +164,21 @@ public:
   /// @brief Prints the historical maximum count of each species.
   void printMaxCounter() {
     for (int i = 1; i <= NSpecies; i++) {
-      std::cout << i << " " << mMaxCounter[i].first << " " << mMaxCounter[i].second << std::endl;
+      std::cout << i << " " << mMaxCounter[i].count << " " << mMaxCounter[i].generation
+                << std::endl;
     }
   }
 
 private:
+  struct Record {
+    unsigned long long count;
+    int generation;
+  };
+
   int mGeneration = 0;
-  std::size_t mSide;
+  int mSide;
   unsigned char *mCells;
-  std::pair<unsigned long long, int> mMaxCounter[NSpecies + 1];
+  Record mMaxCounter[NSpecies + 1];
 };
 
 /// @brief Parses the command line arguments and stores them in the given
@@ -190,7 +197,7 @@ static bool parseArguments(int argc, char **argv, Arguments &arguments) {
     arguments.generations = std::stoi(argv[1]);
     arguments.side = std::stoi(argv[2]);
     arguments.density = std::stof(argv[3]);
-    arguments.seed = std::stoull(argv[4]);
+    arguments.seed = static_cast<unsigned int>(std::stoul(argv[4]));
     return true;
   } catch (const std::exception &e) {
     std::cerr << "Could not parse arguments: " << e.what() << std::endl;
