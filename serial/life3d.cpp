@@ -1,4 +1,6 @@
+#include <iomanip>
 #include <iostream>
+#include <omp.h>
 
 static constexpr int NSpecies = 9;
 
@@ -41,17 +43,24 @@ public:
   Life3D(int side) : mSide{side} {
     auto bigSide = static_cast<std::size_t>(side);
     mCells = new unsigned char[bigSide * bigSide * bigSide * 2];
+
+    for (int i = 0; i < NSpecies; i++) {
+      mMaxCounter[i] = std::make_pair(0, 0);
+    }
   }
 
   /// @brief Returns the side length of the 3D world.
   std::size_t side() const { return mSide; }
+
+  /// @brief Returns the active buffer.
+  int active() const { return mGeneration % 2; }
 
   /// @brief Returns the cell at the given position.
   /// @param x X coordinate of the cell.
   /// @param y Y coordinate of the cell.
   /// @param z Z coordinate of the cell.
   /// @return Cell at the given position.
-  unsigned char &cell(int x, int y, int z) { return this->cell(x, y, z, mActive); }
+  unsigned char &cell(int x, int y, int z) { return this->cell(x, y, z, active()); }
 
   /// @brief Returns the cell at the given position.
   /// @param x X coordinate of the cell.
@@ -101,7 +110,7 @@ public:
 
   /// @brief Advances the world by one generation.
   void advance() {
-    int counter[NSpecies + 1];
+    unsigned long long maxCounter[NSpecies + 1]{0};
 
     for (int z = 0; z < mSide; ++z) {
       for (int y = 0; y < mSide; ++y) {
@@ -109,26 +118,24 @@ public:
           // Count the number of neighbors.
           auto neighbors = 0;
           forEachNeighbour(x, y, z, [&](int nx, int ny, int nz) {
-            if (cell(nx, ny, nz, mActive)) {
+            if (cell(nx, ny, nz, active())) {
               ++neighbors;
             }
           });
 
+          auto &old = cell(x, y, z, active());
+          maxCounter[old] += 1;
+
           // Apply the rules.
-          auto &old = cell(x, y, z, mActive);
-          auto &next = cell(x, y, z, 1 - mActive);
+          auto &next = cell(x, y, z, 1 - active());
           if (old) {
-            if (neighbors < 5 || neighbors > 13) {
-              next = 0;
-            }
+            next = (neighbors < 5 || neighbors > 13) ? 0 : old;
           } else if (neighbors >= 7 && neighbors <= 10) {
-            for (int i = 0; i < 9; i++) {
-              counter[i] = 0;
-            }
+            int counter[NSpecies + 1]{0};
 
             // Count each species in the neighborhood.
             forEachNeighbour(
-                x, y, z, [&](int nx, int ny, int nz) { counter[cell(nx, ny, nz, mActive)] += 1; });
+                x, y, z, [&](int nx, int ny, int nz) { counter[cell(nx, ny, nz, active())] += 1; });
 
             // Set the cell to the most common species.
             next = 1;
@@ -137,18 +144,34 @@ public:
                 next = i;
               }
             }
+          } else {
+            next = 0;
           }
         }
       }
     }
 
-    mActive = 1 - mActive;
+    for (int i = 1; i <= NSpecies; i++) {
+      if (maxCounter[i] > mMaxCounter[i].first) {
+        mMaxCounter[i] = std::make_pair(maxCounter[i], mGeneration);
+      }
+    }
+
+    mGeneration += 1;
+  }
+
+  /// @brief Prints the historical maximum count of each species.
+  void printMaxCounter() {
+    for (int i = 1; i <= NSpecies; i++) {
+      std::cout << i << " " << mMaxCounter[i].first << " " << mMaxCounter[i].second << std::endl;
+    }
   }
 
 private:
-  int mActive;
+  int mGeneration = 0;
   std::size_t mSide;
   unsigned char *mCells;
+  std::pair<unsigned long long, int> mMaxCounter[NSpecies + 1];
 };
 
 /// @brief Parses the command line arguments and stores them in the given
@@ -181,6 +204,19 @@ int main(int argc, char **argv) {
     std::cerr << "Could not parse arguments" << std::endl;
     return 1;
   }
+
+  Life3D life{arguments.side};
+  life.randomize(arguments.density, arguments.seed);
+  double time = -omp_get_wtime();
+
+  for (int i = 0; i <= arguments.generations; ++i) {
+    life.advance();
+  }
+
+  time += omp_get_wtime();
+  std::cerr << std::fixed << std::setprecision(1) << time << "s" << std::endl;
+
+  life.printMaxCounter();
 
   return 0;
 }
