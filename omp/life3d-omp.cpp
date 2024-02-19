@@ -113,6 +113,7 @@ public:
   void advance() {
     unsigned long long maxCounter[NSpecies + 1]{0};
 
+#pragma omp parallel for collapse(3) reduction(+ : maxCounter[:NSpecies + 1])
     for (int z = 0; z < mSide; ++z) {
       for (int y = 0; y < mSide; ++y) {
         for (int x = 0; x < mSide; ++x) {

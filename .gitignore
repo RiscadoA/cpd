@@ -1,3 +1,4 @@
 life3d
+life3d-omp
 *.o
 .direnv
