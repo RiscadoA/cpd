@@ -12,16 +12,16 @@ else
 	CFLAGS += -O3
 endif
 
-all: life3d
+all: life3d-omp
 
-life3d: life3d.cpp
+life3d-omp: life3d-omp.cpp
 	$(CC) $(CFLAGS) $(SLEEP) -o $@ $^
 
 %.o: %.cpp
 	$(CC) $(CFLAGS) -c ${@:.o=.cpp} -o $@
 
 clean:
-	rm -f *.o life3d
+	rm -f *.o life3d-omp
 
 format:
 	clang-format -i *.cpp
