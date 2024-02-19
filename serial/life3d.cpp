@@ -34,6 +34,11 @@ struct Arguments {
   unsigned int seed;
 };
 
+struct Statistics {
+  unsigned long long count;
+  int generation;
+};
+
 /// @brief Stores a 3D GOL World.
 class Life3D {
 public:
@@ -44,24 +49,10 @@ public:
   Life3D(int side) : mSide{side} {
     auto bigSide = static_cast<std::size_t>(side);
     mCells = new unsigned char[bigSide * bigSide * bigSide * 2];
-
-    for (int i = 0; i <= NSpecies; i++) {
-      mMaxCounter[i] = {0, 0};
-    }
   }
 
   /// @brief Returns the side length of the 3D world.
   int side() const { return mSide; }
-
-  /// @brief Returns the active buffer.
-  int active() const { return mGeneration % 2; }
-
-  /// @brief Returns the cell at the given position.
-  /// @param x X coordinate of the cell.
-  /// @param y Y coordinate of the cell.
-  /// @param z Z coordinate of the cell.
-  /// @return Cell at the given position.
-  unsigned char &cell(int x, int y, int z) { return this->cell(x, y, z, active()); }
 
   /// @brief Returns the cell at the given position.
   /// @param x X coordinate of the cell.
@@ -100,18 +91,19 @@ public:
       for (int y = 0; y < mSide; ++y) {
         for (int x = 0; x < mSide; ++x) {
           if (random.next() < density) {
-            cell(x, y, z) = static_cast<unsigned char>(random.next() * NSpecies) + 1;
+            cell(x, y, z, 0) = static_cast<unsigned char>(random.next() * NSpecies) + 1;
           } else {
-            cell(x, y, z) = 0;
+            cell(x, y, z, 0) = 0;
           }
         }
       }
     }
   }
 
-  /// @brief Advances the world by one generation.
-  void advance() {
-    unsigned long long maxCounter[NSpecies + 1]{0};
+  /// @brief Calculates the next generation from the current one.
+  void update(int generation, Statistics stats[NSpecies + 1]) {
+    unsigned long long counts[NSpecies + 1]{0};
+    int active = generation % 2;
 
     for (int z = 0; z < mSide; ++z) {
       for (int y = 0; y < mSide; ++y) {
@@ -119,16 +111,16 @@ public:
           // Count the number of neighbors.
           auto neighbors = 0;
           forEachNeighbour(x, y, z, [&](int nx, int ny, int nz) {
-            if (cell(nx, ny, nz, active())) {
+            if (cell(nx, ny, nz, active)) {
               ++neighbors;
             }
           });
 
-          auto &old = cell(x, y, z, active());
-          maxCounter[old] += 1;
+          auto &old = cell(x, y, z, active);
+          counts[old] += 1;
 
           // Apply the rules.
-          auto &next = cell(x, y, z, 1 - active());
+          auto &next = cell(x, y, z, 1 - active);
           if (old) {
             next = (neighbors < 5 || neighbors > 13) ? 0 : old;
           } else if (neighbors >= 7 && neighbors <= 10) {
@@ -136,7 +128,7 @@ public:
 
             // Count each species in the neighborhood.
             forEachNeighbour(
-                x, y, z, [&](int nx, int ny, int nz) { counter[cell(nx, ny, nz, active())] += 1; });
+                x, y, z, [&](int nx, int ny, int nz) { counter[cell(nx, ny, nz, active)] += 1; });
 
             // Set the cell to the most common species.
             next = 1;
@@ -153,32 +145,15 @@ public:
     }
 
     for (int i = 1; i <= NSpecies; i++) {
-      if (maxCounter[i] > mMaxCounter[i].count) {
-        mMaxCounter[i] = {maxCounter[i], mGeneration};
+      if (counts[i] > stats[i].count) {
+        stats[i] = {counts[i], generation};
       }
-    }
-
-    mGeneration += 1;
-  }
-
-  /// @brief Prints the historical maximum count of each species.
-  void printMaxCounter() {
-    for (int i = 1; i <= NSpecies; i++) {
-      std::cout << i << " " << mMaxCounter[i].count << " " << mMaxCounter[i].generation
-                << std::endl;
     }
   }
 
 private:
-  struct Record {
-    unsigned long long count;
-    int generation;
-  };
-
-  int mGeneration = 0;
   int mSide;
   unsigned char *mCells;
-  Record mMaxCounter[NSpecies + 1];
 };
 
 /// @brief Parses the command line arguments and stores them in the given
@@ -212,18 +187,25 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  Statistics stats[NSpecies + 1];
+  for (int i = 0; i <= NSpecies; i++) {
+    stats[i] = {0, 0};
+  }
+
   Life3D life{arguments.side};
   life.randomize(arguments.density, arguments.seed);
   double time = -omp_get_wtime();
 
-  for (int i = 0; i <= arguments.generations; ++i) {
-    life.advance();
+  for (int generation = 0; generation < arguments.generations; ++generation) {
+    life.update(generation, stats);
   }
 
   time += omp_get_wtime();
   std::cerr << std::fixed << std::setprecision(1) << time << "s" << std::endl;
 
-  life.printMaxCounter();
+  for (int i = 1; i <= NSpecies; i++) {
+    std::cout << i << " " << stats[i].count << " " << stats[i].generation << std::endl;
+  }
 
   return 0;
 }
