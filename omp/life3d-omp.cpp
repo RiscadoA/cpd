@@ -105,7 +105,7 @@ public:
     unsigned long long counts[NSpecies + 1]{0};
     int active = generation % 2;
 
-#pragma omp parallel for collapse(3) reduction(+ : counts)
+#pragma omp parallel for schedule(static) collapse(3) reduction(+ : counts)
     for (int z = 0; z < mSide; ++z) {
       for (int y = 0; y < mSide; ++y) {
         for (int x = 0; x < mSide; ++x) {
