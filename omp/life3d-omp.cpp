@@ -85,15 +85,16 @@ public:
   /// @brief Initializes the world with random cells.
   /// @param density Density of the cells.
   /// @param seed Seed for the random number generator.
-  void randomize(float density, unsigned int seed) {
+  void randomize(float density, unsigned int seed, Statistics stats[NSpecies + 1]) {
     Random random{seed};
     for (int z = 0; z < mSide; ++z) {
       for (int y = 0; y < mSide; ++y) {
         for (int x = 0; x < mSide; ++x) {
           if (random.next() < density) {
-            cell(x, y, z, 0) = static_cast<unsigned char>(random.next() * NSpecies) + 1;
+            cell(x, y, z, 1) = static_cast<unsigned char>(random.next() * NSpecies) + 1;
+            stats[cell(x, y, z, 1)].count += 1;
           } else {
-            cell(x, y, z, 0) = 0;
+            cell(x, y, z, 1) = 0;
           }
         }
       }
@@ -118,7 +119,6 @@ public:
           });
 
           auto &old = cell(x, y, z, active);
-          counts[old] += 1;
 
           // Apply the rules.
           auto &next = cell(x, y, z, 1 - active);
@@ -141,6 +141,8 @@ public:
           } else {
             next = 0;
           }
+
+          counts[next] += 1;
         }
       }
     }
@@ -194,10 +196,10 @@ int main(int argc, char **argv) {
   }
 
   Life3D life{arguments.side};
-  life.randomize(arguments.density, arguments.seed);
+  life.randomize(arguments.density, arguments.seed, stats);
   double time = -omp_get_wtime();
 
-  for (int generation = 0; generation < arguments.generations; ++generation) {
+  for (int generation = 1; generation <= arguments.generations; ++generation) {
     life.update(generation, stats);
   }
 

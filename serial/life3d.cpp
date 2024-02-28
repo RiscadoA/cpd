@@ -118,7 +118,6 @@ public:
           });
 
           auto &old = cell(x, y, z, active);
-          counts[old] += 1;
 
           // Apply the rules.
           auto &next = cell(x, y, z, 1 - active);
@@ -141,6 +140,8 @@ public:
           } else {
             next = 0;
           }
+
+          counts[next] += 1;
         }
       }
     }
