@@ -92,112 +92,6 @@ void randomize_grid(unsigned char *grid, int N, float density, int input_seed) {
 
 #define fast_max(x, y) (x - ((x - y) & (x - y) >> 31))
 
-/**
- * @brief Calculates the next generation of the grid from the current one.
- * @param previous Previous generation of the grid.
- * @param next Next generation of the grid.
- * @param N Side length of the grid.
- * @param total_count Array which keeps the count of each species.
- */
-void update_grid(unsigned char *previous, unsigned char *next, int N,
-                 long long total_count[N_SPECIES + 1]) {
-  for (int x = 0; x < N; x++) {
-    for (int y = 0; y < N; y++) {
-      for (int z = 0; z < N; z++) {
-        unsigned char current = read_grid(previous, N, x, y, z);
-
-        if (current) {
-          int live_neighbors = 0;
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 0, -1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 0, 1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, -1, -1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, -1, 0);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, -1, 1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 0, -1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 0, 0);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 0, 1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 1, -1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 1, 0);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 1, 1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, -1, -1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, -1, 0);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, -1, 1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 1, -1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 1, 0);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 1, 1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, -1, -1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, -1, 0);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, -1, 1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 0, -1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 0, 0);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 0, 1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 1, -1);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 1, 0);
-          live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 1, 1);
-          if (live_neighbors <= 4 || live_neighbors > 13) {
-            current = 0;
-          }
-        } else {
-          int neighbor_count[N_SPECIES + 1] = {0};
-          neighbor_count[read_neighbor(previous, N, x, y, z, 0, 0, -1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 0, 0, 1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, -1, -1, -1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, -1, -1, 0)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, -1, -1, 1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, -1, 0, -1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, -1, 0, 0)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, -1, 0, 1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, -1, 1, -1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, -1, 1, 0)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, -1, 1, 1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 0, -1, -1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 0, -1, 0)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 0, -1, 1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 0, 1, -1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 0, 1, 0)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 0, 1, 1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 1, -1, -1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 1, -1, 0)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 1, -1, 1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 1, 0, -1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 1, 0, 0)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 1, 0, 1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 1, 1, -1)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 1, 1, 0)] += 1;
-          neighbor_count[read_neighbor(previous, N, x, y, z, 1, 1, 1)] += 1;
-
-          int live_neighbors = 26 - neighbor_count[0];
-          if (live_neighbors >= 7 && live_neighbors <= 10) {
-            neighbor_count[1] = (neighbor_count[1] << 4) | (N_SPECIES - 1);
-            neighbor_count[2] = (neighbor_count[2] << 4) | (N_SPECIES - 2);
-            neighbor_count[3] = (neighbor_count[3] << 4) | (N_SPECIES - 3);
-            neighbor_count[4] = (neighbor_count[4] << 4) | (N_SPECIES - 4);
-            neighbor_count[5] = (neighbor_count[5] << 4) | (N_SPECIES - 5);
-            neighbor_count[6] = (neighbor_count[6] << 4) | (N_SPECIES - 6);
-            neighbor_count[7] = (neighbor_count[7] << 4) | (N_SPECIES - 7);
-            neighbor_count[8] = (neighbor_count[8] << 4) | (N_SPECIES - 8);
-            neighbor_count[9] = (neighbor_count[9] << 4) | (N_SPECIES - 9);
-
-            int maximum = neighbor_count[1];
-            maximum = fast_max(maximum, neighbor_count[2]);
-            maximum = fast_max(maximum, neighbor_count[3]);
-            maximum = fast_max(maximum, neighbor_count[4]);
-            maximum = fast_max(maximum, neighbor_count[5]);
-            maximum = fast_max(maximum, neighbor_count[6]);
-            maximum = fast_max(maximum, neighbor_count[7]);
-            maximum = fast_max(maximum, neighbor_count[8]);
-            maximum = fast_max(maximum, neighbor_count[9]);
-            current = N_SPECIES - (maximum & 0x0F);
-          }
-        }
-
-        total_count[current] += 1;
-        write_grid(next, N, x, y, z, current);
-      }
-    }
-  }
-}
-
 int main(int argc, char **argv) {
   if (argc != 5) {
     fprintf(stderr, "Usage: %s <generations> <side> <density> <seed>\n", argv[0]);
@@ -242,7 +136,102 @@ int main(int argc, char **argv) {
 
   /* Run the simulation */
   for (int g = 1; g <= generations; g++) {
-    update_grid(previous, next, N, total_count);
+    /* Update the cells */
+    for (int x = 0; x < N; x++) {
+      for (int y = 0; y < N; y++) {
+        for (int z = 0; z < N; z++) {
+          unsigned char current = read_grid(previous, N, x, y, z);
+
+          if (current) {
+            int live_neighbors = 0;
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 0, -1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 0, 1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, -1, -1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, -1, 0);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, -1, 1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 0, -1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 0, 0);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 0, 1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 1, -1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 1, 0);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 1, 1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, -1, -1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, -1, 0);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, -1, 1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 1, -1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 1, 0);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 1, 1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, -1, -1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, -1, 0);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, -1, 1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 0, -1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 0, 0);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 0, 1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 1, -1);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 1, 0);
+            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 1, 1);
+            if (live_neighbors <= 4 || live_neighbors > 13) {
+              current = 0;
+            }
+          } else {
+            int neighbor_count[N_SPECIES + 1] = {0};
+            neighbor_count[read_neighbor(previous, N, x, y, z, 0, 0, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 0, 0, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, -1, -1, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, -1, -1, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, -1, -1, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, -1, 0, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, -1, 0, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, -1, 0, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, -1, 1, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, -1, 1, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, -1, 1, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 0, -1, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 0, -1, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 0, -1, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 0, 1, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 0, 1, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 0, 1, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 1, -1, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 1, -1, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 1, -1, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 1, 0, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 1, 0, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 1, 0, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 1, 1, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 1, 1, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N, x, y, z, 1, 1, 1)] += 1;
+
+            int live_neighbors = 26 - neighbor_count[0];
+            if (live_neighbors >= 7 && live_neighbors <= 10) {
+              neighbor_count[1] = (neighbor_count[1] << 4) | (N_SPECIES - 1);
+              neighbor_count[2] = (neighbor_count[2] << 4) | (N_SPECIES - 2);
+              neighbor_count[3] = (neighbor_count[3] << 4) | (N_SPECIES - 3);
+              neighbor_count[4] = (neighbor_count[4] << 4) | (N_SPECIES - 4);
+              neighbor_count[5] = (neighbor_count[5] << 4) | (N_SPECIES - 5);
+              neighbor_count[6] = (neighbor_count[6] << 4) | (N_SPECIES - 6);
+              neighbor_count[7] = (neighbor_count[7] << 4) | (N_SPECIES - 7);
+              neighbor_count[8] = (neighbor_count[8] << 4) | (N_SPECIES - 8);
+              neighbor_count[9] = (neighbor_count[9] << 4) | (N_SPECIES - 9);
+
+              int maximum = neighbor_count[1];
+              maximum = fast_max(maximum, neighbor_count[2]);
+              maximum = fast_max(maximum, neighbor_count[3]);
+              maximum = fast_max(maximum, neighbor_count[4]);
+              maximum = fast_max(maximum, neighbor_count[5]);
+              maximum = fast_max(maximum, neighbor_count[6]);
+              maximum = fast_max(maximum, neighbor_count[7]);
+              maximum = fast_max(maximum, neighbor_count[8]);
+              maximum = fast_max(maximum, neighbor_count[9]);
+              current = N_SPECIES - (maximum & 0x0F);
+            }
+          }
+
+          total_count[current] += 1;
+          write_grid(next, N, x, y, z, current);
+        }
+      }
+    }
 
     /* Update the maximums array */
     for (int i = 1; i <= N_SPECIES; ++i) {
