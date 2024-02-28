@@ -9,7 +9,7 @@ CFLAGS = -std=c++20 -I. \
 ifeq ($(DEBUG), 1)
     CFLAGS += -g -O0 -fsanitize=address -fsanitize=undefined
 else
-	CFLAGS += -O3
+	CFLAGS += -O2
 endif
 
 all: life3d
