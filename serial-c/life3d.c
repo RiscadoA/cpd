@@ -36,7 +36,7 @@ float get_random() {
  * @param N Side length of the grid.
  */
 unsigned char *alloc_grid(int N) {
-  size_t side = (size_t)N;
+  size_t side = (size_t)N + 2;
   return (unsigned char *)malloc(side * side * side * sizeof(unsigned char));
 }
 
@@ -45,6 +45,15 @@ unsigned char *alloc_grid(int N) {
  * @param grid Grid to be freed.
  */
 void free_grid(unsigned char *grid) { free(grid); }
+
+#define linear_from_3d(S, x, y, z) ((x) * (S) * (S) + (y) * (S) + (z))
+
+#define read_neighbor(grid, S, c, dx, dy, dz) grid[(c) + linear_from_3d((S), (dx), (dy), (dz))]
+
+#define is_neighbor_alive(grid, S, c, dx, dy, dz)                                                  \
+  !!read_neighbor((grid), (S), (c), (dx), (dy), (dz))
+
+#define fast_max(x, y) ((x) - (((x) - (y)) & ((x) - (y)) >> 31))
 
 /**
  * @brief Randomize the grid with a given density.
@@ -55,42 +64,30 @@ void free_grid(unsigned char *grid) { free(grid); }
  */
 void randomize_grid(unsigned char *grid, int N, float density, int input_seed) {
   init_random(input_seed);
-  for (int x = 0; x < N; x++)
-    for (int y = 0; y < N; y++)
-      for (int z = 0; z < N; z++)
+  for (int x = 1; x <= N; x++)
+    for (int y = 1; y <= N; y++)
+      for (int z = 1; z <= N; z++)
         if (get_random() < density)
-          grid[x * N * N + y * N + z] = (unsigned char)(get_random() * N_SPECIES) + 1;
+          grid[linear_from_3d(N + 2, x, y, z)] = (unsigned char)(get_random() * N_SPECIES) + 1;
 }
 
-/**
- * @brief Accesses a cell in the grid.
- * @param grid Grid to be accessed.
- * @param N Side length of the grid.
- * @param x X coordinate of the cell.
- * @param y Y coordinate of the cell.
- * @param z Z coordinate of the cell.
- */
-#define read_grid(grid, N, x, y, z) grid[x * N * N + y * N + z]
-
-/**
- * @brief Sets a cell in the grid.
- * @param grid Grid to be accessed.
- * @param N Side length of the grid.
- * @param x X coordinate of the cell.
- * @param y Y coordinate of the cell.
- * @param z Z coordinate of the cell.
- * @param value Value to be set.
- */
-#define write_grid(grid, N, x, y, z, value) (grid[x * N * N + y * N + z] = value)
-
-#define wrap_around(N, c) ((c + N) % N)
-
-#define linear_from_3d(N, x, y, z)                                                                 \
-  (wrap_around(N, x) * N * N + wrap_around(N, y) * N + wrap_around(N, z))
-
-#define read_neighbor(grid, N, x, y, z, dx, dy, dz) grid[linear_from_3d(N, x + dx, y + dy, z + dz)]
-
-#define fast_max(x, y) (x - ((x - y) & (x - y) >> 31))
+void print_grid(const char *title, unsigned char *grid, int N) {
+  printf("%s\n---\n", title);
+  for (int x = 0; x <= N + 1; ++x) {
+    printf("x = %d\n", x);
+    for (int y = 0; y <= N + 1; ++y) {
+      for (int z = 0; z <= N + 1; ++z) {
+        if (grid[linear_from_3d(N + 2, x, y, z)]) {
+          printf("%d ", grid[linear_from_3d(N + 2, x, y, z)]);
+        } else {
+          printf("  ");
+        }
+      }
+      printf("\n");
+    }
+    printf("\n");
+  }
+}
 
 int main(int argc, char **argv) {
   if (argc != 5) {
@@ -113,12 +110,15 @@ int main(int argc, char **argv) {
   unsigned char *next = alloc_grid(N);
   randomize_grid(previous, N, density, seed);
 
+  /* Start tracking time */
+  double time = -omp_get_wtime();
+
   /* Count how many of each species is alive */
   long long total_count[N_SPECIES + 1] = {0};
-  for (int x = 0; x < N; ++x) {
-    for (int y = 0; y < N; ++y) {
-      for (int z = 0; z < N; ++z) {
-        total_count[read_grid(previous, N, x, y, z)] += 1;
+  for (int x = 1; x <= N; ++x) {
+    for (int y = 1; y <= N; ++y) {
+      for (int z = 1; z <= N; ++z) {
+        total_count[previous[linear_from_3d(N + 2, x, y, z)]] += 1;
       }
     }
   }
@@ -131,76 +131,98 @@ int main(int argc, char **argv) {
     total_count[i] = 0;
   }
 
-  /* Start tracking time */
-  double time = -omp_get_wtime();
-
   /* Run the simulation */
   for (int g = 1; g <= generations; g++) {
+    /* Stretch the grid in the x axis */
+    for (int u = 1; u <= N; ++u) {
+      for (int v = 1; v <= N; ++v) {
+        previous[linear_from_3d(N + 2, 0, u, v)] = previous[linear_from_3d(N + 2, N, u, v)];
+        previous[linear_from_3d(N + 2, N + 1, u, v)] = previous[linear_from_3d(N + 2, 1, u, v)];
+      }
+    }
+
+    /* Stretch the grid in the y axis */
+    for (int u = 0; u <= N + 1; ++u) {
+      for (int v = 1; v <= N; ++v) {
+        previous[linear_from_3d(N + 2, u, 0, v)] = previous[linear_from_3d(N + 2, u, N, v)];
+        previous[linear_from_3d(N + 2, u, N + 1, v)] = previous[linear_from_3d(N + 2, u, 1, v)];
+      }
+    }
+
+    /* Stretch the grid in the z axis */
+    for (int u = 0; u <= N + 1; ++u) {
+      for (int v = 0; v <= N + 1; ++v) {
+        previous[linear_from_3d(N + 2, u, v, 0)] = previous[linear_from_3d(N + 2, u, v, N)];
+        previous[linear_from_3d(N + 2, u, v, N + 1)] = previous[linear_from_3d(N + 2, u, v, 1)];
+      }
+    }
+
     /* Update the cells */
-    for (int x = 0; x < N; x++) {
-      for (int y = 0; y < N; y++) {
-        for (int z = 0; z < N; z++) {
-          unsigned char current = read_grid(previous, N, x, y, z);
+    for (int x = 1; x <= N; ++x) {
+      for (int y = 1; y <= N; ++y) {
+        for (int z = 1; z <= N; ++z) {
+          int c = linear_from_3d(N + 2, x, y, z);
+          unsigned char current = previous[c];
 
           if (current) {
             int live_neighbors = 0;
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 0, -1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 0, 1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, -1, -1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, -1, 0);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, -1, 1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 0, -1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 0, 0);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 0, 1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 1, -1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 1, 0);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, -1, 1, 1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, -1, -1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, -1, 0);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, -1, 1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 1, -1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 1, 0);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 0, 1, 1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, -1, -1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, -1, 0);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, -1, 1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 0, -1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 0, 0);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 0, 1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 1, -1);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 1, 0);
-            live_neighbors += !!read_neighbor(previous, N, x, y, z, 1, 1, 1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 0, 0, -1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 0, 0, 1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, -1, -1, -1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, -1, -1, 0);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, -1, -1, 1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, -1, 0, -1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, -1, 0, 0);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, -1, 0, 1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, -1, 1, -1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, -1, 1, 0);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, -1, 1, 1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 0, -1, -1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 0, -1, 0);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 0, -1, 1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 0, 1, -1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 0, 1, 0);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 0, 1, 1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 1, -1, -1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 1, -1, 0);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 1, -1, 1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 1, 0, -1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 1, 0, 0);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 1, 0, 1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 1, 1, -1);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 1, 1, 0);
+            live_neighbors += is_neighbor_alive(previous, N + 2, c, 1, 1, 1);
             if (live_neighbors <= 4 || live_neighbors > 13) {
               current = 0;
             }
           } else {
             int neighbor_count[N_SPECIES + 1] = {0};
-            neighbor_count[read_neighbor(previous, N, x, y, z, 0, 0, -1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 0, 0, 1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, -1, -1, -1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, -1, -1, 0)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, -1, -1, 1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, -1, 0, -1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, -1, 0, 0)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, -1, 0, 1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, -1, 1, -1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, -1, 1, 0)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, -1, 1, 1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 0, -1, -1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 0, -1, 0)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 0, -1, 1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 0, 1, -1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 0, 1, 0)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 0, 1, 1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 1, -1, -1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 1, -1, 0)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 1, -1, 1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 1, 0, -1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 1, 0, 0)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 1, 0, 1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 1, 1, -1)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 1, 1, 0)] += 1;
-            neighbor_count[read_neighbor(previous, N, x, y, z, 1, 1, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 0, 0, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 0, 0, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, -1, -1, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, -1, -1, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, -1, -1, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, -1, 0, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, -1, 0, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, -1, 0, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, -1, 1, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, -1, 1, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, -1, 1, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 0, -1, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 0, -1, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 0, -1, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 0, 1, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 0, 1, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 0, 1, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 1, -1, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 1, -1, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 1, -1, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 1, 0, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 1, 0, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 1, 0, 1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 1, 1, -1)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 1, 1, 0)] += 1;
+            neighbor_count[read_neighbor(previous, N + 2, c, 1, 1, 1)] += 1;
 
             int live_neighbors = 26 - neighbor_count[0];
             if (live_neighbors >= 7 && live_neighbors <= 10) {
@@ -228,7 +250,7 @@ int main(int argc, char **argv) {
           }
 
           total_count[current] += 1;
-          write_grid(next, N, x, y, z, current);
+          next[c] = current;
         }
       }
     }
@@ -248,6 +270,9 @@ int main(int argc, char **argv) {
     previous = next;
     next = temp;
   }
+
+  // [1 1 1] to [2 2 2]
+  // [1 2 2] + [-1 1 0] -> [0 3 2] = [2 1 2]
 
   /* Stop tracking time */
   time += omp_get_wtime();
