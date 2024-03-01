@@ -50,9 +50,13 @@ void free_grid(unsigned char *grid) { free(grid); }
 
 #define read_neighbor(grid, S, c, dx, dy, dz) grid[(c) + linear_from_3d((S), (dx), (dy), (dz))]
 
+// We use a double !! to convert the species count to a boolean value (0 or 1).
 #define is_neighbor_alive(grid, S, c, dx, dy, dz)                                                  \
   !!read_neighbor((grid), (S), (c), (dx), (dy), (dz))
 
+// We use this macro to compute the maximum of two numbers without branching.
+// We decided to use it after discovering during profiling that the branch
+// miss rate was very high in the original code.
 #define fast_max(x, y) ((x) - (((x) - (y)) & ((x) - (y)) >> 31))
 
 /**
@@ -69,24 +73,6 @@ void randomize_grid(unsigned char *grid, int N, float density, int input_seed) {
       for (int z = 1; z <= N; z++)
         if (get_random() < density)
           grid[linear_from_3d(N + 2, x, y, z)] = (unsigned char)(get_random() * N_SPECIES) + 1;
-}
-
-void print_grid(const char *title, unsigned char *grid, int N) {
-  printf("%s\n---\n", title);
-  for (int x = 0; x <= N + 1; ++x) {
-    printf("x = %d\n", x);
-    for (int y = 0; y <= N + 1; ++y) {
-      for (int z = 0; z <= N + 1; ++z) {
-        if (grid[linear_from_3d(N + 2, x, y, z)]) {
-          printf("%d ", grid[linear_from_3d(N + 2, x, y, z)]);
-        } else {
-          printf("  ");
-        }
-      }
-      printf("\n");
-    }
-    printf("\n");
-  }
 }
 
 int main(int argc, char **argv) {
@@ -164,8 +150,22 @@ int main(int argc, char **argv) {
           int c = linear_from_3d(N + 2, x, y, z);
           unsigned char current = previous[c];
 
+          /**
+           * README:
+           *
+           * The following code is a manual unrolling of the loop that checks the
+           * neighbors of a cell. This is done to ensure we access the grid in the
+           * optimal way, cache-wise. We compared the performance with the original
+           * loop using #pragma GCC unroll, but we got 30% worse performance.
+           *
+           * We also omit the line that would check the current cell, as we only want
+           * to check the neighbors.
+           */
+
           if (current) {
             int live_neighbors = 0;
+
+            // We first access the neighbors in the same line as the current cell.
             live_neighbors += is_neighbor_alive(previous, N + 2, c, 0, 0, -1);
             live_neighbors += is_neighbor_alive(previous, N + 2, c, 0, 0, 1);
             live_neighbors += is_neighbor_alive(previous, N + 2, c, -1, -1, -1);
@@ -196,6 +196,7 @@ int main(int argc, char **argv) {
               current = 0;
             }
           } else {
+            // Same as above, but we collect the counts for each species.
             int neighbor_count[N_SPECIES + 1] = {0};
             neighbor_count[read_neighbor(previous, N + 2, c, 0, 0, -1)] += 1;
             neighbor_count[read_neighbor(previous, N + 2, c, 0, 0, 1)] += 1;
@@ -224,27 +225,26 @@ int main(int argc, char **argv) {
             neighbor_count[read_neighbor(previous, N + 2, c, 1, 1, 0)] += 1;
             neighbor_count[read_neighbor(previous, N + 2, c, 1, 1, 1)] += 1;
 
+            // To get the number of live neighbors, we subtract the number of dead neighbors
+            // from the total number of neighbors.
             int live_neighbors = 26 - neighbor_count[0];
             if (live_neighbors >= 7 && live_neighbors <= 10) {
-              neighbor_count[1] = (neighbor_count[1] << 4) | (N_SPECIES - 1);
-              neighbor_count[2] = (neighbor_count[2] << 4) | (N_SPECIES - 2);
-              neighbor_count[3] = (neighbor_count[3] << 4) | (N_SPECIES - 3);
-              neighbor_count[4] = (neighbor_count[4] << 4) | (N_SPECIES - 4);
-              neighbor_count[5] = (neighbor_count[5] << 4) | (N_SPECIES - 5);
-              neighbor_count[6] = (neighbor_count[6] << 4) | (N_SPECIES - 6);
-              neighbor_count[7] = (neighbor_count[7] << 4) | (N_SPECIES - 7);
-              neighbor_count[8] = (neighbor_count[8] << 4) | (N_SPECIES - 8);
-              neighbor_count[9] = (neighbor_count[9] << 4) | (N_SPECIES - 9);
+#pragma GCC unroll 9
+              for (int i = 1; i <= N_SPECIES; ++i) {
+                // We store the species count in the lower 4 bits of the neighbor count, in order to
+                // use a branchless max. Notice that we store the species as N_SPECIES - i, so that
+                // the species with a lower number have higher priority in case of a tie.
+                neighbor_count[i] = (neighbor_count[i] << 4) | (N_SPECIES - i);
+              }
 
+              // Use a branchless max to find the maximum of the values computed above.
               int maximum = neighbor_count[1];
-              maximum = fast_max(maximum, neighbor_count[2]);
-              maximum = fast_max(maximum, neighbor_count[3]);
-              maximum = fast_max(maximum, neighbor_count[4]);
-              maximum = fast_max(maximum, neighbor_count[5]);
-              maximum = fast_max(maximum, neighbor_count[6]);
-              maximum = fast_max(maximum, neighbor_count[7]);
-              maximum = fast_max(maximum, neighbor_count[8]);
-              maximum = fast_max(maximum, neighbor_count[9]);
+#pragma GCC unroll 9
+              for (int i = 2; i <= N_SPECIES; ++i) {
+                maximum = fast_max(maximum, neighbor_count[i]);
+              }
+
+              // Extract the species from the lower 4 bits of the maximum value.
               current = N_SPECIES - (maximum & 0x0F);
             }
           }
@@ -270,9 +270,6 @@ int main(int argc, char **argv) {
     previous = next;
     next = temp;
   }
-
-  // [1 1 1] to [2 2 2]
-  // [1 2 2] + [-1 1 0] -> [0 3 2] = [2 1 2]
 
   /* Stop tracking time */
   time += omp_get_wtime();
