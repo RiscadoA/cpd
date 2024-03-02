@@ -129,7 +129,7 @@ int main(int argc, char **argv) {
      * expensive modulus and division operations every neighbor access, we add a border of 1 cell
      * around the grid. This border is initialized with the same values as the opposite side of the
      * grid, so that the boundary conditions are satisfied.
-     * 
+     *
      * The following three loops correspond to that initialization.
      */
 
