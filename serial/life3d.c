@@ -287,7 +287,7 @@ int main(int argc, char **argv) {
 
   /* Stop tracking time */
   time += omp_get_wtime();
-  printf("%.1fs\n", time);
+  fprintf(stderr, "%.1fs\n", time);
 
   /* Print the maximums */
   for (int i = 1; i <= N_SPECIES; i++) {
