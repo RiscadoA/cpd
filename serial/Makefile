@@ -1,6 +1,6 @@
 CC = gcc
 
-CFLAGS = -std=c17 -I. \
+CFLAGS = -std=c17 \
 		 -fopenmp \
 		 -Wall -Wextra \
 		 -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-enum -Wundef -Wunreachable-code -Wunused
@@ -14,7 +14,7 @@ endif
 all: life3d
 
 life3d: life3d.c
-	$(CC) $(CFLAGS) $(SLEEP) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c ${@:.o=.c} -o $@
