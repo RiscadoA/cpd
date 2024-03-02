@@ -46,8 +46,11 @@ unsigned char *alloc_grid(int N) {
  */
 void free_grid(unsigned char *grid) { free(grid); }
 
+// Map a 3D coordinate to a linear index in the grid array.
 #define linear_from_3d(S, x, y, z) ((x) * (S) * (S) + (y) * (S) + (z))
 
+// Read the value of a neighbor cell, given the linear index of the current cell and the
+// displacement in the x, y and z axes.
 #define read_neighbor(grid, S, c, dx, dy, dz) grid[(c) + linear_from_3d((S), (dx), (dy), (dz))]
 
 // We use a double !! to convert the species count to a boolean value (0 or 1).
@@ -119,6 +122,17 @@ int main(int argc, char **argv) {
 
   /* Run the simulation */
   for (int g = 1; g <= generations; g++) {
+    /**
+     * README:
+     *
+     * To reduce the complexity of the boundary conditions (wrap around), instead of performing
+     * expensive modulus and division operations every neighbor access, we add a border of 1 cell
+     * around the grid. This border is initialized with the same values as the opposite side of the
+     * grid, so that the boundary conditions are satisfied.
+     * 
+     * The following three loops correspond to that initialization.
+     */
+
     /* Stretch the grid in the x axis */
     for (int u = 1; u <= N; ++u) {
       for (int v = 1; v <= N; ++v) {
