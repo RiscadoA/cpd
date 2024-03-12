@@ -18,6 +18,7 @@
             gcc
             clang-tools
             linuxKernel.packages.linux_6_1.perf
+            bc
           ];
         };
       });
