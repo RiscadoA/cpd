@@ -158,7 +158,7 @@ int main(int argc, char **argv) {
     }
 
     /* Update the cells */
-#pragma omp parallel for schedule(static) collapse(3) reduction(+ : total_count)
+#pragma omp parallel for schedule(static)
     for (int x = 1; x <= N; ++x) {
       for (int y = 1; y <= N; ++y) {
         for (int z = 1; z <= N; ++z) {
@@ -264,6 +264,7 @@ int main(int argc, char **argv) {
             }
           }
 
+#pragma omp atomic
           total_count[current] += 1;
           next[c] = current;
         }
