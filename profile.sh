@@ -5,7 +5,7 @@ SIZE=$2
 DENSITY=$3
 SEED=$4
 MAX_THREADS=$5
-REPEAT_TIMES=5
+REPEAT_TIMES=3
 
 function run {
     local cmd=$@
@@ -20,15 +20,18 @@ function run {
     echo $average
 }
 
-# Capture stderr to variable
+echo -n "\addplot coordinates {"
+
 echo "Serial:" >&2
 TIME=$(run ./serial/life3d $GENERATIONS $SIZE $DENSITY $SEED)
 echo >&2
 echo -n "(serial,$TIME)"
 
-for i in $(seq 1 $MAX_THREADS); do
+for i in 1 2 4 8; do
     echo "OpenMP with $i threads:" >&2
     TIME=$(OMP_NUM_THREADS=$i run ./omp/life3d-omp $GENERATIONS $SIZE $DENSITY $SEED)
     echo >&2
     echo -n " (omp-$i,$TIME)"
 done
+
+echo -n "};"
