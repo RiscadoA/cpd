@@ -134,6 +134,7 @@ int main(int argc, char **argv) {
      */
 
     /* Stretch the grid in the x axis */
+    #pragma omp parallel for schedule(static)
     for (int u = 1; u <= N; ++u) {
       for (int v = 1; v <= N; ++v) {
         previous[linear_from_3d(N + 2, 0, u, v)] = previous[linear_from_3d(N + 2, N, u, v)];
@@ -142,6 +143,7 @@ int main(int argc, char **argv) {
     }
 
     /* Stretch the grid in the y axis */
+    #pragma omp parallel for schedule(static)
     for (int u = 0; u <= N + 1; ++u) {
       for (int v = 1; v <= N; ++v) {
         previous[linear_from_3d(N + 2, u, 0, v)] = previous[linear_from_3d(N + 2, u, N, v)];
@@ -150,6 +152,7 @@ int main(int argc, char **argv) {
     }
 
     /* Stretch the grid in the z axis */
+    #pragma omp parallel for schedule(static)
     for (int u = 0; u <= N + 1; ++u) {
       for (int v = 0; v <= N + 1; ++v) {
         previous[linear_from_3d(N + 2, u, v, 0)] = previous[linear_from_3d(N + 2, u, v, N)];
@@ -158,7 +161,7 @@ int main(int argc, char **argv) {
     }
 
     /* Update the cells */
-#pragma omp parallel for schedule(static) collapse(3) reduction(+ : total_count)
+#pragma omp parallel for schedule(static) reduction(+ : total_count)
     for (int x = 1; x <= N; ++x) {
       for (int y = 1; y <= N; ++y) {
         for (int z = 1; z <= N; ++z) {
