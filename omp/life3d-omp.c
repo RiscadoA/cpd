@@ -122,41 +122,41 @@ int main(int argc, char **argv) {
 
   /* Run the simulation */
   for (int g = 1; g <= generations; g++) {
-    /**
-     * README:
-     *
-     * To reduce the complexity of the boundary conditions (wrap around), instead of performing
-     * expensive modulus and division operations every neighbor access, we add a border of 1 cell
-     * around the grid. This border is initialized with the same values as the opposite side of the
-     * grid, so that the boundary conditions are satisfied.
-     *
-     * The following three loops correspond to that initialization.
-     */
+/**
+ * README:
+ *
+ * To reduce the complexity of the boundary conditions (wrap around), instead of performing
+ * expensive modulus and division operations every neighbor access, we add a border of 1 cell
+ * around the grid. This border is initialized with the same values as the opposite side of the
+ * grid, so that the boundary conditions are satisfied.
+ *
+ * The following three loops correspond to that initialization.
+ */
 
-    /* Stretch the grid in the x axis */
-    #pragma omp parallel for schedule(static)
+/* Stretch the grid in the x axis */
+#pragma omp parallel for schedule(static)
     for (int u = 1; u <= N; ++u) {
-      #pragma omp simd
+#pragma omp simd
       for (int v = 1; v <= N; ++v) {
         previous[linear_from_3d(N + 2, 0, u, v)] = previous[linear_from_3d(N + 2, N, u, v)];
         previous[linear_from_3d(N + 2, N + 1, u, v)] = previous[linear_from_3d(N + 2, 1, u, v)];
       }
     }
 
-    /* Stretch the grid in the y axis */
-    #pragma omp parallel for schedule(static)
+/* Stretch the grid in the y axis */
+#pragma omp parallel for schedule(static)
     for (int u = 0; u <= N + 1; ++u) {
-      #pragma omp simd
+#pragma omp simd
       for (int v = 1; v <= N; ++v) {
         previous[linear_from_3d(N + 2, u, 0, v)] = previous[linear_from_3d(N + 2, u, N, v)];
         previous[linear_from_3d(N + 2, u, N + 1, v)] = previous[linear_from_3d(N + 2, u, 1, v)];
       }
     }
 
-    /* Stretch the grid in the z axis */
-    #pragma omp parallel for schedule(static)
+/* Stretch the grid in the z axis */
+#pragma omp parallel for schedule(static)
     for (int u = 0; u <= N + 1; ++u) {
-      #pragma omp simd
+#pragma omp simd
       for (int v = 0; v <= N + 1; ++v) {
         previous[linear_from_3d(N + 2, u, v, 0)] = previous[linear_from_3d(N + 2, u, v, N)];
         previous[linear_from_3d(N + 2, u, v, N + 1)] = previous[linear_from_3d(N + 2, u, v, 1)];
@@ -167,7 +167,7 @@ int main(int argc, char **argv) {
 #pragma omp parallel for schedule(static) reduction(+ : total_count)
     for (int x = 1; x <= N; ++x) {
       for (int y = 1; y <= N; ++y) {
-        #pragma omp simd
+#pragma omp simd
         for (int z = 1; z <= N; ++z) {
           int c = linear_from_3d(N + 2, x, y, z);
           unsigned char current = previous[c];
@@ -295,7 +295,7 @@ int main(int argc, char **argv) {
 
   /* Stop tracking time */
   time += omp_get_wtime();
-  fprintf(stderr, "%.1fs\n", time);
+  fprintf(stderr, "%.1f\n", time);
 
   /* Print the maximums */
   for (int i = 1; i <= N_SPECIES; i++) {
