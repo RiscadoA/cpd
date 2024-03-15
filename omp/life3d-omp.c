@@ -121,6 +121,7 @@ int main(int argc, char **argv) {
   }
 
   /* Run the simulation */
+#pragma omp parallel
   for (int g = 1; g <= generations; g++) {
 /**
  * README:
@@ -134,7 +135,7 @@ int main(int argc, char **argv) {
  */
 
 /* Stretch the grid in the x axis */
-#pragma omp parallel for schedule(static)
+#pragma omp for schedule(static)
     for (int u = 1; u <= N; ++u) {
 #pragma omp simd
       for (int v = 1; v <= N; ++v) {
@@ -144,7 +145,7 @@ int main(int argc, char **argv) {
     }
 
 /* Stretch the grid in the y axis */
-#pragma omp parallel for schedule(static)
+#pragma omp for schedule(static)
     for (int u = 0; u <= N + 1; ++u) {
 #pragma omp simd
       for (int v = 1; v <= N; ++v) {
@@ -154,7 +155,7 @@ int main(int argc, char **argv) {
     }
 
 /* Stretch the grid in the z axis */
-#pragma omp parallel for schedule(static)
+#pragma omp for schedule(static)
     for (int u = 0; u <= N + 1; ++u) {
 #pragma omp simd
       for (int v = 0; v <= N + 1; ++v) {
@@ -164,7 +165,7 @@ int main(int argc, char **argv) {
     }
 
     /* Update the cells */
-#pragma omp parallel for schedule(static) reduction(+ : total_count)
+#pragma omp for schedule(static) reduction(+ : total_count)
     for (int x = 1; x <= N; ++x) {
       for (int y = 1; y <= N; ++y) {
 #pragma omp simd
@@ -277,20 +278,23 @@ int main(int argc, char **argv) {
       }
     }
 
-    /* Update the maximums array */
-    for (int i = 1; i <= N_SPECIES; ++i) {
-      if (maximums[i].count < total_count[i]) {
-        maximums[i].count = total_count[i];
-        maximums[i].generation = g;
+#pragma omp single
+    {
+      /* Update the maximums array */
+      for (int i = 1; i <= N_SPECIES; ++i) {
+        if (maximums[i].count < total_count[i]) {
+          maximums[i].count = total_count[i];
+          maximums[i].generation = g;
+        }
+
+        total_count[i] = 0;
       }
 
-      total_count[i] = 0;
+      /* Swap the previous and next grids */
+      unsigned char *temp = previous;
+      previous = next;
+      next = temp;
     }
-
-    /* Swap the previous and next grids */
-    unsigned char *temp = previous;
-    previous = next;
-    next = temp;
   }
 
   /* Stop tracking time */
