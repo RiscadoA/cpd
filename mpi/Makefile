@@ -5,7 +5,7 @@ CFLAGS = -std=c17 -I. \
 		 -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-enum -Wundef -Wunreachable-code -Wunused
 
 ifeq ($(DEBUG), 1)
-    CFLAGS += -g -O0 -fsanitize=address -fsanitize=undefined -DDEBUG
+    CFLAGS += -g -O0 -fsanitize=undefined -DDEBUG
 else
 	CFLAGS += -O2
 endif
