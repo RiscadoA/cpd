@@ -9,11 +9,6 @@
 
 unsigned int internal_seed;
 
-struct maximum {
-  int generation;
-  long long count;
-};
-
 struct task {
   int neighbors[3][3][3];
   int px, py, pz;
@@ -352,22 +347,15 @@ int main(int argc, char **argv) {
   init_rle_1d(task, y);
   init_rle_1d(task, z);
 
-  /* Count how many of each species is alive */
-  long long total_count[N_SPECIES + 1] = {0};
-  /*for (int x = 1; x <= N; ++x) {
-    for (int y = 1; y <= N; ++y) {
-      for (int z = 1; z <= N; ++z) {
-        total_count[previous[linear_from_3d(task, x, y, z)]] += 1;
+  /* Count how many of each species is alive in the first generation */
+  unsigned long long *history = (unsigned long long *)calloc(
+      sizeof(unsigned long long), (size_t)((generations + 1) * (N_SPECIES + 1)));
+  for (int x = 1; x <= task.sx; ++x) {
+    for (int y = 1; y <= task.sy; ++y) {
+      for (int z = 1; z <= task.sz; ++z) {
+        history[previous[linear_from_3d(task, x, y, z)]] += 1;
       }
     }
-  }*/
-
-  /* Prepare the maximums array */
-  struct maximum maximums[N_SPECIES + 1];
-  for (int i = 1; i <= N_SPECIES; i++) {
-    maximums[i].generation = 0;
-    maximums[i].count = total_count[i];
-    total_count[i] = 0;
   }
 
   /* Wait for all tasks to be ready, then start the timer */
@@ -673,7 +661,7 @@ int main(int argc, char **argv) {
             }
           }
 
-          total_count[current] += 1;
+          history[g * (N_SPECIES + 1) + current] += 1;
           next[c] = current;
         }
       }
@@ -682,30 +670,48 @@ int main(int argc, char **argv) {
     /* Wait for borders to be sent to neighbors */
     MPI_Waitall(26, requests_send, MPI_STATUSES_IGNORE);
 
-    /* Update the maximums array */
-    for (int i = 1; i <= N_SPECIES; ++i) {
-      if (maximums[i].count < total_count[i]) {
-        maximums[i].count = total_count[i];
-        maximums[i].generation = g;
-      }
-
-      total_count[i] = 0;
-    }
-
     /* Swap the previous and next grids */
     unsigned char *temp = previous;
     previous = next;
     next = temp;
   }
 
+  /* Reduce the history to the root task */
+  if (rank == 0) {
+    MPI_Reduce(MPI_IN_PLACE, history, (generations + 1) * (N_SPECIES + 1), MPI_UNSIGNED_LONG_LONG,
+               MPI_SUM, 0, MPI_COMM_WORLD);
+  } else {
+    MPI_Reduce(history, NULL, (generations + 1) * (N_SPECIES + 1), MPI_UNSIGNED_LONG_LONG, MPI_SUM,
+               0, MPI_COMM_WORLD);
+  }
+
+  /* If we're the root task, find the maximums */
+  struct {
+    unsigned long long count;
+    int generation;
+  } maximums[N_SPECIES + 1] = {0};
+
+  if (rank == 0) {
+    for (int g = 0; g <= generations; g++) {
+      for (int i = 1; i <= N_SPECIES; i++) {
+        if (history[g * (N_SPECIES + 1) + i] > maximums[i].count) {
+          maximums[i].count = history[g * (N_SPECIES + 1) + i];
+          maximums[i].generation = g;
+        }
+      }
+    }
+  }
+
   /* Wait for all tasks to finish, then stop the timer */
   MPI_Barrier(MPI_COMM_WORLD);
   time += MPI_Wtime();
-  fprintf(stderr, "%.1f\n", time);
+  if (rank == 0) {
+    fprintf(stderr, "%.1f\n", time);
 
-  /* Print the maximums */
-  for (int i = 1; i <= N_SPECIES; i++) {
-    printf("%d %lld %d\n", i, maximums[i].count, maximums[i].generation);
+    /* Print the maximums */
+    for (int i = 1; i <= N_SPECIES; i++) {
+      printf("%d %lld %d\n", i, maximums[i].count, maximums[i].generation);
+    }
   }
 
   /* Terminate MPI */
