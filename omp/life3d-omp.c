@@ -92,7 +92,6 @@ int main(int argc, char **argv) {
   if (N <= 0 || density < 0 || density > 1) {
     fprintf(stderr, "Invalid arguments\n");
     return 1;
-  }
 
   /* Initialize the grids */
   unsigned char *previous = alloc_grid(N);

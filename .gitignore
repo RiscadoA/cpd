@@ -3,3 +3,5 @@ life3d-omp
 life3d-mpi
 *.o
 .direnv
+.vscode
+err_*.txt
