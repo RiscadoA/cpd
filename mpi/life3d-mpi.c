@@ -10,6 +10,7 @@
 unsigned int internal_seed;
 
 struct task {
+  MPI_Comm comm;
   int neighbors[3][3][3];
   int px, py, pz;
   int sx, sy, sz;
@@ -41,21 +42,6 @@ float get_random() {
 }
 
 /**
- * @brief Finds the lowest prime factor of a number.
- * @param n Number to find the factor of.
- * @return Lowest prime factor of n.
- */
-int lowest_prime_factor(int n) {
-  for (int i = 2; i <= n / 2; ++i) {
-    if (n % i == 0) {
-      return i;
-    }
-  }
-
-  return n;
-}
-
-/**
  * @brief Initializes the task struct for a given rank, task count and N.
  * @param rank Rank of the task.
  * @param size Total number of tasks.
@@ -63,45 +49,36 @@ int lowest_prime_factor(int n) {
  * @param task Task struct to be initialized.
  */
 void init_task(int rank, int size, int N, struct task *task) {
-  // Find out how many times we should divide each dimension.
-  int dx, dy, dz;
-  dx = dy = dz = 1;
-  while (size > 1) {
-    int factor = lowest_prime_factor(size);
-    if (dx <= dy && dx <= dz) {
-      dx *= factor;
-    } else if (dy <= dx && dy <= dz) {
-      dy *= factor;
-    } else {
-      dz *= factor;
-    }
-    size /= factor;
-  }
+  // Find out how many times we should divide each dimension of the grid.
+  int dims[3] = {0, 0, 0};
+  MPI_Dims_create(size, 3, dims);
 
-  // Find the coordinates of the task within the divided grid.
-  int tx = rank / (dy * dz);
-  int ty = (rank / dz) % dy;
-  int tz = rank % dz;
+  // Create a cartesian communicator.
+  MPI_Cart_create(MPI_COMM_WORLD, 3, dims, (int[]){1, 1, 1}, 0, &task->comm);
+
+  // Find the coordinates of the task.
+  int coords[3];
+  MPI_Cart_coords(task->comm, rank, 3, coords);
 
   // Find the ranks of the neighbor tasks.
   for (int nx = -1; nx <= 1; nx++) {
     for (int ny = -1; ny <= 1; ny++) {
       for (int nz = -1; nz <= 1; nz++) {
-        int px = (tx + nx + dx) % dx;
-        int py = (ty + ny + dy) % dy;
-        int pz = (tz + nz + dz) % dz;
-        task->neighbors[nx + 1][ny + 1][nz + 1] = px * dy * dz + py * dz + pz;
+        int px = (coords[0] + nx + dims[0]) % dims[0];
+        int py = (coords[1] + ny + dims[1]) % dims[1];
+        int pz = (coords[2] + nz + dims[2]) % dims[2];
+        MPI_Cart_rank(task->comm, (int[]){px, py, pz}, &task->neighbors[nx + 1][ny + 1][nz + 1]);
       }
     }
   }
 
   // Find the position and size of the task.
-  task->px = (tx * N) / dx;
-  task->py = (ty * N) / dy;
-  task->pz = (tz * N) / dz;
-  task->sx = ((tx + 1) * N) / dx - task->px;
-  task->sy = ((ty + 1) * N) / dy - task->py;
-  task->sz = ((tz + 1) * N) / dz - task->pz;
+  task->px = (coords[0] * N) / dims[0];
+  task->py = (coords[1] * N) / dims[1];
+  task->pz = (coords[2] * N) / dims[2];
+  task->sx = ((coords[0] + 1) * N) / dims[0] - task->px;
+  task->sy = ((coords[1] + 1) * N) / dims[1] - task->py;
+  task->sz = ((coords[2] + 1) * N) / dims[2] - task->pz;
 }
 
 /**
@@ -387,8 +364,8 @@ int main(int argc, char **argv) {
 #define send_grid_impl(t, grid, rle, px, py, pz, sx, sy, sz, nx, ny, nz)                           \
   copy_to_rle(&(t), &(rle), (grid), (px), (py), (pz), (sx), (sy), (sz));                           \
   MPI_Isend((rle).data, (rle).size, MPI_UNSIGNED_CHAR,                                             \
-            (task).neighbors[(nx) + 1][(ny) + 1][(nz) + 1], g * 26 + request_index,                \
-            MPI_COMM_WORLD, &requests_send[request_index]);                                        \
+            (task).neighbors[(nx) + 1][(ny) + 1][(nz) + 1], g * 26 + request_index, (task).comm,   \
+            &requests_send[request_index]);                                                        \
   request_index++;
 
 #define send_grid(t, grid, rle, px, py, pz, ax, ay, az, nx, ny, nz)                                \
@@ -397,8 +374,8 @@ int main(int argc, char **argv) {
 
 #define send_corner_impl(t, grid, px, py, pz, nx, ny, nz)                                          \
   MPI_Isend((grid) + linear_from_3d((t), (px), (py), (pz)), 1, MPI_UNSIGNED_CHAR,                  \
-            (task).neighbors[(nx) + 1][(ny) + 1][(nz) + 1], g * 26 + request_index,                \
-            MPI_COMM_WORLD, &requests_send[request_index]);                                        \
+            (task).neighbors[(nx) + 1][(ny) + 1][(nz) + 1], g * 26 + request_index, (task).comm,   \
+            &requests_send[request_index]);                                                        \
   request_index++;
 
 #define send_corner(t, grid, px, py, pz)                                                           \
@@ -447,14 +424,14 @@ int main(int argc, char **argv) {
 
 #define recv_rle(task, rle, nx, ny, nz)                                                            \
   MPI_Irecv((rle).data, (rle).capacity, MPI_UNSIGNED_CHAR,                                         \
-            (task).neighbors[(nx) + 1][(ny) + 1][(nz) + 1], g * 26 + request_index,                \
-            MPI_COMM_WORLD, &requests_recv[request_index]);                                        \
+            (task).neighbors[(nx) + 1][(ny) + 1][(nz) + 1], g * 26 + request_index, (task).comm,   \
+            &requests_recv[request_index]);                                                        \
   request_index++;
 
 #define recv_corner_impl(t, grid, px, py, pz, nx, ny, nz)                                          \
   MPI_Irecv((grid) + linear_from_3d((t), (px), (py), (pz)), 1, MPI_UNSIGNED_CHAR,                  \
-            (task).neighbors[(nx) + 1][(ny) + 1][(nz) + 1], g * 26 + request_index,                \
-            MPI_COMM_WORLD, &requests_recv[request_index]);                                        \
+            (task).neighbors[(nx) + 1][(ny) + 1][(nz) + 1], g * 26 + request_index, (task).comm,   \
+            &requests_recv[request_index]);                                                        \
   request_index++;
 
 #define recv_corner(t, grid, px, py, pz)                                                           \
@@ -687,6 +664,15 @@ int main(int argc, char **argv) {
 
     wait_send_time += MPI_Wtime();
 
+    fprintf(stderr,
+            "Generation %d rank %d: prepare=%.6f update=%.6f wait_recv=%.6f wait_send=%.6f\n", g,
+            rank, prepare_communication_time, update_time, wait_recv_time, wait_send_time);
+
+    prepare_communication_time = 0.0;
+    update_time = 0.0;
+    wait_recv_time = 0.0;
+    wait_send_time = 0.0;
+
     /* Swap the previous and next grids */
     unsigned char *temp = previous;
     previous = next;
@@ -696,10 +682,10 @@ int main(int argc, char **argv) {
   /* Reduce the history to the root task */
   if (rank == 0) {
     MPI_Reduce(MPI_IN_PLACE, history, (generations + 1) * (N_SPECIES + 1), MPI_UNSIGNED_LONG_LONG,
-               MPI_SUM, 0, MPI_COMM_WORLD);
+               MPI_SUM, 0, (task).comm);
   } else {
     MPI_Reduce(history, NULL, (generations + 1) * (N_SPECIES + 1), MPI_UNSIGNED_LONG_LONG, MPI_SUM,
-               0, MPI_COMM_WORLD);
+               0, (task).comm);
   }
 
   /* If we're the root task, find the maximums */
@@ -719,11 +705,8 @@ int main(int argc, char **argv) {
     }
   }
 
-  fprintf(stderr, "Rank %d: prepare=%.6f update=%.6f wait_recv=%.6f wait_send=%.6f\n", rank,
-          prepare_communication_time, update_time, wait_recv_time, wait_send_time);
-
   /* Wait for all tasks to finish, then stop the timer */
-  MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Barrier(task.comm);
   time += MPI_Wtime();
   if (rank == 0) {
     fprintf(stderr, "%.1f\n", time);
