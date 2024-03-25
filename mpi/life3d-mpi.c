@@ -662,6 +662,9 @@ int main(int argc, char **argv) {
     /* Wait for borders to be sent to neighbors */
     MPI_Waitall(26, requests_send, MPI_STATUSES_IGNORE);
 
+    /* Wait for other tasks to finish the generation */
+    MPI_Barrier(task.comm);
+
     wait_send_time += MPI_Wtime();
 
     fprintf(stderr,
