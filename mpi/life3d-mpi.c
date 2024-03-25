@@ -679,6 +679,7 @@ int main(int argc, char **argv) {
     update_time = 0.0;
     wait_recv_time = 0.0;
     wait_send_time = 0.0;
+    barrier_time = 0.0;
 
     /* Swap the previous and next grids */
     unsigned char *temp = previous;
