@@ -340,10 +340,9 @@ int main(int argc, char **argv) {
   double time = -MPI_Wtime();
   double prepare_communication_time = 0.0;
   double update_time = 0.0;
-  double first_recv = 0.0;
-  double last_recv = 0.0;
   double wait_recv_time = 0.0;
   double wait_send_time = 0.0;
+  double barrier_time = 0.0;
 
   /* Run the simulation */
   for (int g = 1; g <= generations; g++) {
@@ -527,6 +526,12 @@ int main(int argc, char **argv) {
     }
 
     wait_recv_time += MPI_Wtime();
+
+    /* Wait for borders to be sent to neighbors */
+    wait_send_time -= MPI_Wtime();
+    MPI_Waitall(26, requests_send, MPI_STATUSES_IGNORE);
+    wait_send_time += MPI_Wtime();
+
     update_time -= MPI_Wtime();
 
 #ifdef DEBUG
@@ -657,19 +662,18 @@ int main(int argc, char **argv) {
     }
 
     update_time += MPI_Wtime();
-    wait_send_time -= MPI_Wtime();
-
-    /* Wait for borders to be sent to neighbors */
-    MPI_Waitall(26, requests_send, MPI_STATUSES_IGNORE);
+    barrier_time -= MPI_Wtime();
 
     /* Wait for other tasks to finish the generation */
     MPI_Barrier(task.comm);
 
-    wait_send_time += MPI_Wtime();
+    barrier_time += MPI_Wtime();
 
     fprintf(stderr,
-            "Generation %d rank %d: prepare=%.6f update=%.6f wait_recv=%.6f wait_send=%.6f\n", g,
-            rank, prepare_communication_time, update_time, wait_recv_time, wait_send_time);
+            "Generation %d rank %d: prepare=%.6f update=%.6f wait_recv=%.6f wait_send=%.6f "
+            "barrier_time=%.6f\n",
+            g, rank, prepare_communication_time, update_time, wait_recv_time, wait_send_time,
+            barrier_time);
 
     prepare_communication_time = 0.0;
     update_time = 0.0;
