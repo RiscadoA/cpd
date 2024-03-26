@@ -2,17 +2,17 @@
 
 GENERATIONS=$1
 SIZE=$2
-DENSITY=$3
-SEED=$4
-LAB=$5
-MIN=$6
+LAB=$3
+MIN=$4
+DENSITY=0.4
+SEED=1
 REPEAT_TIMES=3
 
 function run {
     local cmd=$@
     local sum=0
     for i in $(seq 1 $REPEAT_TIMES); do
-        local time=$($cmd 2>&1 >/dev/null | cut -d 's' -f 1)
+        local time=$($cmd 2>&1 >/dev/null | cut -f 1)
         sum=$(echo $sum + $time | bc)
         echo "Run $i: $time" >&2
     done
@@ -32,7 +32,7 @@ for i in 1 2 4 8 16 32 64; do
     nodes=$(echo "($i + 3) / 4" | bc)
 
     echo "MPI with $i processes on $nodes nodes:" >&2
-    TIME=$(run srun -n $i -N $nodes -C $LAB ./mpi/life3d-mpi $GENERATIONS $SIZE $DENSITY $SEED)
+    TIME=$(run srun -n $i -N $nodes -C $LAB --mem=8G ./mpi/life3d-mpi $GENERATIONS $SIZE $DENSITY $SEED)
     echo >&2
     echo -n " (mpi-$i,$TIME)"
 done

@@ -563,10 +563,10 @@ int main(int argc, char **argv) {
 
       barrier_time += MPI_Wtime();
 
-      fprintf(stderr,
-              "Generation %d rank %d: update=%.6f wait_recv=%.6f wait_send=%.6f "
-              "barrier_time=%.6f\n",
-              g, rank, update_time, wait_recv_time, wait_send_time, barrier_time);
+      // fprintf(stderr,
+      //         "Generation %d rank %d: update=%.6f wait_recv=%.6f wait_send=%.6f "
+      //         "barrier_time=%.6f\n",
+      //         g, rank, update_time, wait_recv_time, wait_send_time, barrier_time);
 
       /* Swap the previous and next grids */
       unsigned char *temp = previous;
