@@ -63,16 +63,12 @@ void init_task(int rank, int size, int N, struct task *task) {
   MPI_Cart_coords(task->comm, rank, 3, coords);
 
   // Find the ranks of the neighbor tasks.
-  for (int nx = -1; nx <= 1; nx++) {
-    for (int ny = -1; ny <= 1; ny++) {
-      for (int nz = -1; nz <= 1; nz++) {
-        int px = (coords[0] + nx + dims[0]) % dims[0];
-        int py = (coords[1] + ny + dims[1]) % dims[1];
-        int pz = (coords[2] + nz + dims[2]) % dims[2];
-        MPI_Cart_rank(task->comm, (int[]){px, py, pz}, &task->neighbors[nx + 1][ny + 1][nz + 1]);
-      }
-    }
-  }
+  MPI_Cart_rank(task->comm, (int[]){coords[0] - 1, coords[1], coords[2]}, &task->x_neighbors[0]);
+  MPI_Cart_rank(task->comm, (int[]){coords[0] + 1, coords[1], coords[2]}, &task->x_neighbors[1]);
+  MPI_Cart_rank(task->comm, (int[]){coords[0], coords[1] - 1, coords[2]}, &task->y_neighbors[0]);
+  MPI_Cart_rank(task->comm, (int[]){coords[0], coords[1] + 1, coords[2]}, &task->y_neighbors[1]);
+  MPI_Cart_rank(task->comm, (int[]){coords[0], coords[1], coords[2] - 1}, &task->z_neighbors[0]);
+  MPI_Cart_rank(task->comm, (int[]){coords[0], coords[1], coords[2] + 1}, &task->z_neighbors[1]);
 
   // Find the position and size of the task.
   task->px = (coords[0] * N) / dims[0];
@@ -307,31 +303,25 @@ int main(int argc, char **argv) {
   unsigned char *next = alloc_grid(task.sx, task.sy, task.sz);
   randomize_grid(previous, &task, totalN, density, seed);
 
-  struct rle send_rle_x[2] = {alloc_rle(task.sy * task.sz), alloc_rle(task.sy * task.sz)};
-  struct rle recv_rle_x[2] = {alloc_rle(task.sy * task.sz), alloc_rle(task.sy * task.sz)};
-  struct rle send_rle_y[2] = {alloc_rle(task.sx * task.sz), alloc_rle(task.sx * task.sz)};
-  struct rle recv_rle_y[2] = {alloc_rle(task.sx * task.sz), alloc_rle(task.sx * task.sz)};
+  /* Initialize the buffers we'll be using to communicate */
   struct rle send_rle_z[2] = {alloc_rle(task.sx * task.sy), alloc_rle(task.sx * task.sy)};
   struct rle recv_rle_z[2] = {alloc_rle(task.sx * task.sy), alloc_rle(task.sx * task.sy)};
+  MPI_Request recv_req_z[2];
 
-#define init_rle_2d(t, u, v)                                                                       \
-  struct rle u##v##_rle_send[2] = {alloc_rle((t).s##u * (t).s##v),                                 \
-                                   alloc_rle((t).s##u * (t).s##v)};                                \
-  struct rle u##v##_rle_recv[2] = {alloc_rle((t).s##u * (t).s##v), alloc_rle((t).s##u * (t).s##v)};
+  struct rle send_rle_y[2] = {alloc_rle(task.sx * (task.sz + 2)),
+                              alloc_rle(task.sx * (task.sz + 2))};
+  struct rle recv_rle_y[2] = {alloc_rle(task.sx * (task.sz + 2)),
+                              alloc_rle(task.sx * (task.sz + 2))};
+  MPI_Request recv_req_y[2];
 
-#define init_rle_1d(t, u)                                                                          \
-  struct rle u##_rle_send[4] = {alloc_rle((t).s##u), alloc_rle((t).s##u), alloc_rle((t).s##u),     \
-                                alloc_rle((t).s##u)};                                              \
-  struct rle u##_rle_recv[4] = {alloc_rle((t).s##u), alloc_rle((t).s##u), alloc_rle((t).s##u),     \
-                                alloc_rle((t).s##u)};
+  struct rle send_rle_x[2] = {alloc_rle((task.sy + 2) * (task.sz + 2)),
+                              alloc_rle((task.sy + 2) * (task.sz + 2))};
+  struct rle recv_rle_x[2] = {alloc_rle((task.sy + 2) * (task.sz + 2)),
+                              alloc_rle((task.sy + 2) * (task.sz + 2))};
+  MPI_Request recv_req_x[2];
 
-  /* Initialize the buffer we'll be using to communicate */
-  init_rle_2d(task, x, y);
-  init_rle_2d(task, x, z);
-  init_rle_2d(task, y, z);
-  init_rle_1d(task, x);
-  init_rle_1d(task, y);
-  init_rle_1d(task, z);
+  MPI_Request send_req[6];
+  MPI_Status status[2];
 
   /* Count how many of each species is alive in the first generation */
   unsigned long long *history = (unsigned long long *)calloc(
@@ -347,7 +337,6 @@ int main(int argc, char **argv) {
   /* Wait for all tasks to be ready, then start the timer */
   MPI_Barrier(MPI_COMM_WORLD);
   double time = -MPI_Wtime();
-  double prepare_communication_time = 0.0;
   double update_time = 0.0;
   double wait_recv_time = 0.0;
   double wait_send_time = 0.0;
@@ -366,219 +355,73 @@ int main(int argc, char **argv) {
        * every iteration.
        */
 
-      prepare_communication_time -= MPI_Wtime();
+      wait_recv_time = -MPI_Wtime();
 
       /* Stretch the grid in the z axis */
       copy_to_rle(&task, &send_rle_z[0], previous, 1, 1, 1, task.sx, task.sy, 1);
       MPI_Isend(send_rle_z[0].data, send_rle_z[0].size, MPI_UNSIGNED_CHAR, task.z_neighbors[0], 0,
-                task.comm, &requests_send[0]);
+                task.comm, &send_req[0]);
       copy_to_rle(&task, &send_rle_z[1], previous, 1, 1, task.sz, task.sx, task.sy, 1);
+      MPI_Isend(send_rle_z[1].data, send_rle_z[1].size, MPI_UNSIGNED_CHAR, task.z_neighbors[1], 1,
+                task.comm, &send_req[1]);
+
+      MPI_Irecv(recv_rle_z[0].data, recv_rle_z[0].capacity, MPI_UNSIGNED_CHAR, task.z_neighbors[0],
+                1, task.comm, &recv_req_z[0]);
+      MPI_Irecv(recv_rle_z[1].data, recv_rle_z[1].capacity, MPI_UNSIGNED_CHAR, task.z_neighbors[1],
+                0, task.comm, &recv_req_z[1]);
+
+      MPI_Waitall(2, recv_req_z, status);
+      MPI_Get_count(&status[0], MPI_UNSIGNED_CHAR, &recv_rle_z[0].size);
+      MPI_Get_count(&status[1], MPI_UNSIGNED_CHAR, &recv_rle_z[1].size);
+      copy_from_rle(&task, &recv_rle_z[0], previous, 1, 1, 0, task.sx, task.sy, 1);
+      copy_from_rle(&task, &recv_rle_z[1], previous, 1, 1, task.sz + 1, task.sx, task.sy, 1);
 
       /* Stretch the grid in the y axis */
-      copy_to_rle(&task, &send_rle_xz[0], previous, 1, 1, 1, task.sx, 1, task.sz);
-      copy_to_rle(&task, &send_rle_xz[1], previous, 1, task.sy, 1, task.sx, 1, task.sz);
+      copy_to_rle(&task, &send_rle_y[0], previous, 1, 1, 0, task.sx, 1, task.sz + 2);
+      MPI_Isend(send_rle_y[0].data, send_rle_y[0].size, MPI_UNSIGNED_CHAR, task.y_neighbors[0], 2,
+                task.comm, &send_req[2]);
+      copy_to_rle(&task, &send_rle_y[1], previous, 1, task.sy, 0, task.sx, 1, task.sz + 2);
+      MPI_Isend(send_rle_y[1].data, send_rle_y[1].size, MPI_UNSIGNED_CHAR, task.y_neighbors[1], 3,
+                task.comm, &send_req[3]);
+
+      MPI_Irecv(recv_rle_y[0].data, recv_rle_y[0].capacity, MPI_UNSIGNED_CHAR, task.y_neighbors[0],
+                3, task.comm, &recv_req_y[0]);
+      MPI_Irecv(recv_rle_y[1].data, recv_rle_y[1].capacity, MPI_UNSIGNED_CHAR, task.y_neighbors[1],
+                2, task.comm, &recv_req_y[1]);
+
+      MPI_Waitall(2, recv_req_y, status);
+      MPI_Get_count(&status[0], MPI_UNSIGNED_CHAR, &recv_rle_y[0].size);
+      MPI_Get_count(&status[1], MPI_UNSIGNED_CHAR, &recv_rle_y[1].size);
+      copy_from_rle(&task, &recv_rle_y[0], previous, 1, 0, 0, task.sx, 1, task.sz + 2);
+      copy_from_rle(&task, &recv_rle_y[1], previous, 1, task.sy + 1, 0, task.sx, 1, task.sz + 2);
 
       /* Stretch the grid in the x axis */
-      copy_to_rle(&task, &send_rle_yz[0], previous, 1, 1, 1, 1, task.sy, task.sz);
-      copy_to_rle(&task, &send_rle_yz[1], previous, task.sx, 1, 1, 1, task.sy, task.sz);
+      copy_to_rle(&task, &send_rle_x[0], previous, 1, 0, 0, 1, task.sy + 2, task.sz + 2);
+      MPI_Isend(send_rle_x[0].data, send_rle_x[0].size, MPI_UNSIGNED_CHAR, task.x_neighbors[0], 4,
+                task.comm, &send_req[4]);
+      copy_to_rle(&task, &send_rle_x[1], previous, task.sx, 0, 0, 1, task.sy + 2, task.sz + 2);
+      MPI_Isend(send_rle_x[1].data, send_rle_x[1].size, MPI_UNSIGNED_CHAR, task.x_neighbors[1], 5,
+                task.comm, &send_req[5]);
 
-/* Stretch the grid in the y axis */
-#pragma omp for schedule(static)
-      for (int u = 0; u <= N + 1; ++u) {
-#pragma omp simd
-        for (int v = 1; v <= N; ++v) {
-          previous[linear_from_3d(N + 2, u, 0, v)] = previous[linear_from_3d(N + 2, u, N, v)];
-          previous[linear_from_3d(N + 2, u, N + 1, v)] = previous[linear_from_3d(N + 2, u, 1, v)];
-        }
-      }
+      MPI_Irecv(recv_rle_x[0].data, recv_rle_x[0].capacity, MPI_UNSIGNED_CHAR, task.x_neighbors[0],
+                5, task.comm, &recv_req_x[0]);
+      MPI_Irecv(recv_rle_x[1].data, recv_rle_x[1].capacity, MPI_UNSIGNED_CHAR, task.x_neighbors[1],
+                4, task.comm, &recv_req_x[1]);
 
-/* Stretch the grid in the z axis */
-#pragma omp for schedule(static)
-      for (int u = 0; u <= N + 1; ++u) {
-#pragma omp simd
-        for (int v = 0; v <= N + 1; ++v) {
-          previous[linear_from_3d(N + 2, u, v, 0)] = previous[linear_from_3d(N + 2, u, v, N)];
-          previous[linear_from_3d(N + 2, u, v, N + 1)] = previous[linear_from_3d(N + 2, u, v, 1)];
-        }
-      }
+      MPI_Waitall(2, recv_req_x, status);
+      MPI_Get_count(&status[0], MPI_UNSIGNED_CHAR, &recv_rle_x[0].size);
+      MPI_Get_count(&status[1], MPI_UNSIGNED_CHAR, &recv_rle_x[1].size);
+      copy_from_rle(&task, &recv_rle_x[0], previous, 0, 0, 0, 1, task.sy + 2, task.sz + 2);
+      copy_from_rle(&task, &recv_rle_x[1], previous, task.sx + 1, 0, 0, 1, task.sy + 2,
+                    task.sz + 2);
 
-      // Send each RLE string to the corresponding neighbor.
-      MPI_Request requests_send[26];
-      int request_index = 0;
-
-#define send_grid_impl(t, grid, rle, px, py, pz, sx, sy, sz, nx, ny, nz)                           \
-  copy_to_rle(&(t), &(rle), (grid), (px), (py), (pz), (sx), (sy), (sz));                           \
-  MPI_Isend((rle).data, (rle).size, MPI_UNSIGNED_CHAR,                                             \
-            (task).neighbors[(nx) + 1][(ny) + 1][(nz) + 1], g * 26 + request_index, (task).comm,   \
-            &requests_send[request_index]);                                                        \
-  request_index++;
-
-#define send_grid(t, grid, rle, px, py, pz, ax, ay, az, nx, ny, nz)                                \
-  send_grid_impl((t), (grid), (rle), (px) ? (t).sx : 1, (py) ? (t).sy : 1, (pz) ? (t).sz : 1,      \
-                 (ax) ? (t).sx : 1, (ay) ? (t).sy : 1, (az) ? (t).sz : 1, (nx), (ny), (nz))
-
-#define send_corner_impl(t, grid, px, py, pz, nx, ny, nz)                                          \
-  MPI_Isend((grid) + linear_from_3d((t), (px), (py), (pz)), 1, MPI_UNSIGNED_CHAR,                  \
-            (task).neighbors[(nx) + 1][(ny) + 1][(nz) + 1], g * 26 + request_index, (task).comm,   \
-            &requests_send[request_index]);                                                        \
-  request_index++;
-
-#define send_corner(t, grid, px, py, pz)                                                           \
-  send_corner_impl((t), (grid), (px) ? (t).sx : 1, (py) ? (t).sy : 1, (pz) ? (t).sz : 1,           \
-                   (px)*2 - 1, (py)*2 - 1, (pz)*2 - 1)
-
-      // Send grid faces to neighbors.
-      send_grid(task, previous, xy_rle_send[0], /*p*/ 0, 0, 0, /*a*/ 1, 1, 0, /*n*/ 0, 0, -1);
-      send_grid(task, previous, xy_rle_send[1], /*p*/ 0, 0, 1, /*a*/ 1, 1, 0, /*n*/ 0, 0, +1);
-
-      send_grid(task, previous, xz_rle_send[0], /*p*/ 0, 0, 0, /*a*/ 1, 0, 1, /*n*/ 0, -1, 0);
-      send_grid(task, previous, xz_rle_send[1], /*p*/ 0, 1, 0, /*a*/ 1, 0, 1, /*n*/ 0, +1, 0);
-
-      send_grid(task, previous, yz_rle_send[0], /*p*/ 0, 0, 0, /*a*/ 0, 1, 1, /*n*/ -1, 0, 0);
-      send_grid(task, previous, yz_rle_send[1], /*p*/ 1, 0, 0, /*a*/ 0, 1, 1, /*n*/ +1, 0, 0);
-
-      // Send grid edges to neighbors.
-      send_grid(task, previous, x_rle_send[0], /*p*/ 0, 0, 0, /*a*/ 1, 0, 0, /*n*/ 0, -1, -1);
-      send_grid(task, previous, x_rle_send[1], /*p*/ 0, 0, 1, /*a*/ 1, 0, 0, /*n*/ 0, -1, +1);
-      send_grid(task, previous, x_rle_send[2], /*p*/ 0, 1, 0, /*a*/ 1, 0, 0, /*n*/ 0, +1, -1);
-      send_grid(task, previous, x_rle_send[3], /*p*/ 0, 1, 1, /*a*/ 1, 0, 0, /*n*/ 0, +1, +1);
-
-      send_grid(task, previous, y_rle_send[0], /*p*/ 0, 0, 0, /*a*/ 0, 1, 0, /*n*/ -1, 0, -1);
-      send_grid(task, previous, y_rle_send[1], /*p*/ 0, 0, 1, /*a*/ 0, 1, 0, /*n*/ -1, 0, +1);
-      send_grid(task, previous, y_rle_send[2], /*p*/ 1, 0, 0, /*a*/ 0, 1, 0, /*n*/ +1, 0, -1);
-      send_grid(task, previous, y_rle_send[3], /*p*/ 1, 0, 1, /*a*/ 0, 1, 0, /*n*/ +1, 0, +1);
-
-      send_grid(task, previous, z_rle_send[0], /*p*/ 0, 0, 0, /*a*/ 0, 0, 1, /*n*/ -1, -1, 0);
-      send_grid(task, previous, z_rle_send[1], /*p*/ 0, 1, 0, /*a*/ 0, 0, 1, /*n*/ -1, +1, 0);
-      send_grid(task, previous, z_rle_send[2], /*p*/ 1, 0, 0, /*a*/ 0, 0, 1, /*n*/ +1, -1, 0);
-      send_grid(task, previous, z_rle_send[3], /*p*/ 1, 1, 0, /*a*/ 0, 0, 1, /*n*/ +1, +1, 0);
-
-      // Send grid corners to neighbors.
-      send_corner(task, previous, /*p*/ 0, 0, 0);
-      send_corner(task, previous, /*p*/ 0, 0, 1);
-      send_corner(task, previous, /*p*/ 0, 1, 0);
-      send_corner(task, previous, /*p*/ 0, 1, 1);
-      send_corner(task, previous, /*p*/ 1, 0, 0);
-      send_corner(task, previous, /*p*/ 1, 0, 1);
-      send_corner(task, previous, /*p*/ 1, 1, 0);
-      send_corner(task, previous, /*p*/ 1, 1, 1);
-
-      // Receive the RLE strings from the neighbors.
-      MPI_Request requests_recv[26];
-      request_index = 0;
-
-#define recv_rle(task, rle, nx, ny, nz)                                                            \
-  MPI_Irecv((rle).data, (rle).capacity, MPI_UNSIGNED_CHAR,                                         \
-            (task).neighbors[(nx) + 1][(ny) + 1][(nz) + 1], g * 26 + request_index, (task).comm,   \
-            &requests_recv[request_index]);                                                        \
-  request_index++;
-
-#define recv_corner_impl(t, grid, px, py, pz, nx, ny, nz)                                          \
-  MPI_Irecv((grid) + linear_from_3d((t), (px), (py), (pz)), 1, MPI_UNSIGNED_CHAR,                  \
-            (task).neighbors[(nx) + 1][(ny) + 1][(nz) + 1], g * 26 + request_index, (task).comm,   \
-            &requests_recv[request_index]);                                                        \
-  request_index++;
-
-#define recv_corner(t, grid, px, py, pz)                                                           \
-  recv_corner_impl((t), (grid), (px) ? (t).sx + 1 : 0, (py) ? (t).sy + 1 : 0,                      \
-                   (pz) ? (t).sz + 1 : 0, (px)*2 - 1, (py)*2 - 1, (pz)*2 - 1)
-
-      // Receive grid faces from neighbors.
-      recv_rle(task, xy_rle_recv[1], 0, 0, +1);
-      recv_rle(task, xy_rle_recv[0], 0, 0, -1);
-
-      recv_rle(task, xz_rle_recv[1], 0, +1, 0);
-      recv_rle(task, xz_rle_recv[0], 0, -1, 0);
-
-      recv_rle(task, yz_rle_recv[1], +1, 0, 0);
-      recv_rle(task, yz_rle_recv[0], -1, 0, 0);
-
-      // Receive grid edges from neighbors.
-      recv_rle(task, x_rle_recv[3], 0, +1, +1);
-      recv_rle(task, x_rle_recv[2], 0, +1, -1);
-      recv_rle(task, x_rle_recv[1], 0, -1, +1);
-      recv_rle(task, x_rle_recv[0], 0, -1, -1);
-
-      recv_rle(task, y_rle_recv[3], +1, 0, +1);
-      recv_rle(task, y_rle_recv[2], +1, 0, -1);
-      recv_rle(task, y_rle_recv[1], -1, 0, +1);
-      recv_rle(task, y_rle_recv[0], -1, 0, -1);
-
-      recv_rle(task, z_rle_recv[3], +1, +1, 0);
-      recv_rle(task, z_rle_recv[2], +1, -1, 0);
-      recv_rle(task, z_rle_recv[1], -1, +1, 0);
-      recv_rle(task, z_rle_recv[0], -1, -1, 0);
-
-      // Receive grid corners from neighbors.
-      recv_corner(task, previous, 1, 1, 1);
-      recv_corner(task, previous, 1, 1, 0);
-      recv_corner(task, previous, 1, 0, 1);
-      recv_corner(task, previous, 1, 0, 0);
-      recv_corner(task, previous, 0, 1, 1);
-      recv_corner(task, previous, 0, 1, 0);
-      recv_corner(task, previous, 0, 0, 1);
-      recv_corner(task, previous, 0, 0, 0);
-
-      prepare_communication_time += MPI_Wtime();
-      wait_recv_time -= MPI_Wtime();
-
-      // Wait for all requests_send to be received.
-      for (int total_received_count = 0; total_received_count < 26; ++total_received_count) {
-        int index;
-        MPI_Status status;
-        MPI_Waitany(26, requests_recv, &index, &status);
-        requests_recv[index] = MPI_REQUEST_NULL;
-
-        // For each of the requests_send which have just been received, process the data.
-#define unpack_grid_impl(t, grid, rle, px, py, pz, sx, sy, sz)                                     \
-  if (index == request_index++) {                                                                  \
-    MPI_Get_count(&status, MPI_UNSIGNED_CHAR, &(rle).size);                                        \
-    copy_from_rle(&(t), &(rle), (grid), (px), (py), (pz), (sx), (sy), (sz));                       \
-    request_index = 26; /* Already matched, prevent further ifs */                                 \
-  }
-
-#define unpack_grid(t, grid, rle, px, py, pz, ax, ay, az)                                          \
-  unpack_grid_impl((t), (grid), (rle), (ax) ? 1 : ((px) ? (t).sx + 1 : 0),                         \
-                   (ay) ? 1 : ((py) ? (t).sy + 1 : 0), (az) ? 1 : ((pz) ? (t).sz + 1 : 0),         \
-                   (ax) ? (t).sx : 1, (ay) ? (t).sy : 1, (az) ? (t).sz : 1)
-
-        request_index = 0;
-
-        // Unpack grid faces from neighbors.
-        unpack_grid(task, previous, xy_rle_recv[1], 0, 0, 1, 1, 1, 0);
-        unpack_grid(task, previous, xy_rle_recv[0], 0, 0, 0, 1, 1, 0);
-
-        unpack_grid(task, previous, xz_rle_recv[1], 0, 1, 0, 1, 0, 1);
-        unpack_grid(task, previous, xz_rle_recv[0], 0, 0, 0, 1, 0, 1);
-
-        unpack_grid(task, previous, yz_rle_recv[1], 1, 0, 0, 0, 1, 1);
-        unpack_grid(task, previous, yz_rle_recv[0], 0, 0, 0, 0, 1, 1);
-
-        // Unpack grid edges from neighbors.
-        unpack_grid(task, previous, x_rle_recv[3], 0, 1, 1, 1, 0, 0);
-        unpack_grid(task, previous, x_rle_recv[2], 0, 1, 0, 1, 0, 0);
-        unpack_grid(task, previous, x_rle_recv[1], 0, 0, 1, 1, 0, 0);
-        unpack_grid(task, previous, x_rle_recv[0], 0, 0, 0, 1, 0, 0);
-
-        unpack_grid(task, previous, y_rle_recv[3], 1, 0, 1, 0, 1, 0);
-        unpack_grid(task, previous, y_rle_recv[2], 1, 0, 0, 0, 1, 0);
-        unpack_grid(task, previous, y_rle_recv[1], 0, 0, 1, 0, 1, 0);
-        unpack_grid(task, previous, y_rle_recv[0], 0, 0, 0, 0, 1, 0);
-
-        unpack_grid(task, previous, z_rle_recv[3], 1, 1, 0, 0, 0, 1);
-        unpack_grid(task, previous, z_rle_recv[2], 1, 0, 0, 0, 0, 1);
-        unpack_grid(task, previous, z_rle_recv[1], 0, 1, 0, 0, 0, 1);
-        unpack_grid(task, previous, z_rle_recv[0], 0, 0, 0, 0, 0, 1);
-      }
-
+      /* Wait for the data to be sent */
       wait_recv_time += MPI_Wtime();
-
-      /* Wait for borders to be sent to neighbors */
-      wait_send_time -= MPI_Wtime();
-      MPI_Waitall(26, requests_send, MPI_STATUSES_IGNORE);
+      wait_send_time = -MPI_Wtime();
+      MPI_Waitall(6, send_req, MPI_STATUSES_IGNORE);
       wait_send_time += MPI_Wtime();
 
-      update_time -= MPI_Wtime();
+      update_time = -MPI_Wtime();
 
 #ifdef DEBUG
       /* Print entire state of grid */
@@ -713,7 +556,7 @@ int main(int argc, char **argv) {
 #pragma omp single
     {
       update_time += MPI_Wtime();
-      barrier_time -= MPI_Wtime();
+      barrier_time = -MPI_Wtime();
 
       /* Wait for other tasks to finish the generation */
       MPI_Barrier(task.comm);
@@ -721,16 +564,9 @@ int main(int argc, char **argv) {
       barrier_time += MPI_Wtime();
 
       fprintf(stderr,
-              "Generation %d rank %d: prepare=%.6f update=%.6f wait_recv=%.6f wait_send=%.6f "
+              "Generation %d rank %d: update=%.6f wait_recv=%.6f wait_send=%.6f "
               "barrier_time=%.6f\n",
-              g, rank, prepare_communication_time, update_time, wait_recv_time, wait_send_time,
-              barrier_time);
-
-      prepare_communication_time = 0.0;
-      update_time = 0.0;
-      wait_recv_time = 0.0;
-      wait_send_time = 0.0;
-      barrier_time = 0.0;
+              g, rank, update_time, wait_recv_time, wait_send_time, barrier_time);
 
       /* Swap the previous and next grids */
       unsigned char *temp = previous;
@@ -785,22 +621,11 @@ int main(int argc, char **argv) {
   free(next);
 
   for (int i = 0; i < 2; ++i) {
-    free(xy_rle_send[i].data);
-    free(xz_rle_send[i].data);
-    free(yz_rle_send[i].data);
-
-    free(xy_rle_recv[i].data);
-    free(xz_rle_recv[i].data);
-    free(yz_rle_recv[i].data);
-  }
-
-  for (int i = 0; i < 4; ++i) {
-    free(x_rle_send[i].data);
-    free(y_rle_send[i].data);
-    free(z_rle_send[i].data);
-
-    free(x_rle_recv[i].data);
-    free(y_rle_recv[i].data);
-    free(z_rle_recv[i].data);
+    free(send_rle_x[i].data);
+    free(send_rle_y[i].data);
+    free(send_rle_z[i].data);
+    free(recv_rle_x[i].data);
+    free(recv_rle_y[i].data);
+    free(recv_rle_z[i].data);
   }
 }
