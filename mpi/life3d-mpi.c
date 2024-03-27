@@ -286,15 +286,8 @@ int main(int argc, char **argv) {
   fprintf(stderr, "Local position: %d %d %d\n", task.px, task.py, task.pz);
   fprintf(stderr, "Local size: %d %d %d\n", task.sx, task.sy, task.sz);
   fprintf(stderr, "Neighbors:\n");
-  for (int i = 0; i < 3; i++) {
-    for (int j = 0; j < 3; j++) {
-      for (int k = 0; k < 3; k++) {
-        fprintf(stderr, "%d ", task.neighbors[i][j][k]);
-      }
-      fprintf(stderr, "\n");
-    }
-    fprintf(stderr, "\n");
-  }
+  fprintf(stderr, "\tx: %d %d\n\ty: %d %d\n\tz: %d %d\n", task.x_neighbors[0], task.x_neighbors[1],
+          task.y_neighbors[0], task.y_neighbors[1], task.z_neighbors[0], task.z_neighbors[1]);
   fflush(stderr);
 #endif
 
@@ -324,12 +317,15 @@ int main(int argc, char **argv) {
   MPI_Status status[2];
 
   /* Count how many of each species is alive in the first generation */
-  unsigned long long *history = (unsigned long long *)calloc(
-      sizeof(unsigned long long), (size_t)((generations + 1) * (N_SPECIES + 1)));
+  unsigned long long total_history[(generations + 1) * (N_SPECIES + 1)];
+  unsigned long long curr_history[N_SPECIES + 1] = {0};
+  for (int i = 0; i < (generations + 1) * (N_SPECIES + 1); i++) {
+    total_history[i] = 0;
+  }
   for (int x = 1; x <= task.sx; ++x) {
     for (int y = 1; y <= task.sy; ++y) {
       for (int z = 1; z <= task.sz; ++z) {
-        history[previous[linear_from_3d(task, x, y, z)]] += 1;
+        total_history[previous[linear_from_3d(task, x, y, z)]] += 1;
       }
     }
   }
@@ -343,9 +339,7 @@ int main(int argc, char **argv) {
   double barrier_time = 0.0;
 
   /* Run the simulation */
-#pragma omp parallel
   for (int g = 1; g <= generations; g++) {
-#pragma omp single
     {
       /**
        * README:
@@ -440,7 +434,7 @@ int main(int argc, char **argv) {
     }
 
 /* Update the cells */
-#pragma omp for schedule(static)
+#pragma omp parallel for schedule(static) reduction(+ : curr_history)
     for (int x = 1; x <= task.sx; ++x) {
       for (int y = 1; y <= task.sy; ++y) {
 #pragma omp simd
@@ -547,13 +541,15 @@ int main(int argc, char **argv) {
             }
           }
 
-          history[g * (N_SPECIES + 1) + current] += 1;
+          curr_history[current] += 1;
           next[c] = current;
         }
       }
     }
-
-#pragma omp single
+    for (int i = 1; i <= N_SPECIES; i++) {
+      total_history[g * (N_SPECIES + 1) + i] = curr_history[i];
+      curr_history[i] = 0;
+    }
     {
       update_time += MPI_Wtime();
       barrier_time = -MPI_Wtime();
@@ -575,13 +571,13 @@ int main(int argc, char **argv) {
     }
   }
 
-  /* Reduce the history to the root task */
+  /* Reduce the total_history to the root task */
   if (rank == 0) {
-    MPI_Reduce(MPI_IN_PLACE, history, (generations + 1) * (N_SPECIES + 1), MPI_UNSIGNED_LONG_LONG,
-               MPI_SUM, 0, (task).comm);
+    MPI_Reduce(MPI_IN_PLACE, total_history, (generations + 1) * (N_SPECIES + 1),
+               MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, (task).comm);
   } else {
-    MPI_Reduce(history, NULL, (generations + 1) * (N_SPECIES + 1), MPI_UNSIGNED_LONG_LONG, MPI_SUM,
-               0, (task).comm);
+    MPI_Reduce(total_history, NULL, (generations + 1) * (N_SPECIES + 1), MPI_UNSIGNED_LONG_LONG,
+               MPI_SUM, 0, (task).comm);
   }
 
   /* If we're the root task, find the maximums */
@@ -593,8 +589,8 @@ int main(int argc, char **argv) {
   if (rank == 0) {
     for (int g = 0; g <= generations; g++) {
       for (int i = 1; i <= N_SPECIES; i++) {
-        if (history[g * (N_SPECIES + 1) + i] > maximums[i].count) {
-          maximums[i].count = history[g * (N_SPECIES + 1) + i];
+        if (total_history[g * (N_SPECIES + 1) + i] > maximums[i].count) {
+          maximums[i].count = total_history[g * (N_SPECIES + 1) + i];
           maximums[i].generation = g;
         }
       }
