@@ -133,28 +133,29 @@ struct rle alloc_rle(int cells) {
  */
 void copy_to_rle(const struct task *task, struct rle *rle, const unsigned char *grid, int px,
                  int py, int pz, int sx, int sy, int sz) {
-  unsigned char count = 0;
+  /* After testing, RLE was disabled since it provided no added benefit. */
+  // unsigned char count = 0;
   rle->size = 0;
 
   for (int x = px; x < px + sx; ++x) {
     for (int y = py; y < py + sy; ++y) {
       for (int z = pz; z < pz + sz; ++z) {
         unsigned char species = grid[linear_from_3d(*task, x, y, z)];
-        if (species) {
-          if (count) {
-            rle->data[rle->size++] = 0;
-            rle->data[rle->size++] = count;
-            count = 0;
-          }
+        // if (species) {
+        //   if (count) {
+        //     rle->data[rle->size++] = 0;
+        //     rle->data[rle->size++] = count;
+        //     count = 0;
+        //   }
           rle->data[rle->size++] = species;
-        } else {
-          ++count;
-          if (count == 255) {
-            rle->data[rle->size++] = 0;
-            rle->data[rle->size++] = count;
-            count = 0;
-          }
-        }
+        // } else {
+        //   ++count;
+        //   if (count == 255) {
+        //     rle->data[rle->size++] = 0;
+        //     rle->data[rle->size++] = count;
+        //     count = 0;
+        //   }
+        // }
       }
     }
   }
@@ -178,11 +179,12 @@ void copy_to_rle(const struct task *task, struct rle *rle, const unsigned char *
  */
 void copy_from_rle(const struct task *task, const struct rle *rle, unsigned char *grid, int px,
                    int py, int pz, int sx, int sy, int sz) {
+  /* After testing, RLE was disabled since it provided no added benefit. */
   int x = px, y = py, z = pz;
 
   for (int index = 0; index < rle->size; ++index) {
     unsigned char species = rle->data[index];
-    if (species) {
+    // if (species) {
       grid[linear_from_3d(*task, x, y, z)] = species;
       if (++z == pz + sz) {
         z = pz;
@@ -191,31 +193,31 @@ void copy_from_rle(const struct task *task, const struct rle *rle, unsigned char
           ++x;
         }
       }
-    } else {
-      unsigned char count = rle->data[++index];
-      for (int i = 0; i < count; ++i) {
-        grid[linear_from_3d(*task, x, y, z)] = 0;
-        if (++z == pz + sz) {
-          z = pz;
-          if (++y == py + sy) {
-            y = py;
-            ++x;
-          }
-        }
-      }
-    }
+    // } else {
+    //   unsigned char count = rle->data[++index];
+    //   for (int i = 0; i < count; ++i) {
+    //     grid[linear_from_3d(*task, x, y, z)] = 0;
+    //     if (++z == pz + sz) {
+    //       z = pz;
+    //       if (++y == py + sy) {
+    //         y = py;
+    //         ++x;
+    //       }
+    //     }
+    //   }
+    // }
   }
 
   // Fill the remaining cells with dead cells.
-  for (; x < px + sx; ++x) {
-    for (; y < py + sy; ++y) {
-      for (; z < pz + sz; ++z) {
-        grid[linear_from_3d(*task, x, y, z)] = 0;
-      }
-      z = pz;
-    }
-    y = py;
-  }
+  // for (; x < px + sx; ++x) {
+  //   for (; y < py + sy; ++y) {
+  //     for (; z < pz + sz; ++z) {
+  //       grid[linear_from_3d(*task, x, y, z)] = 0;
+  //     }
+  //     z = pz;
+  //   }
+  //   y = py;
+  // }
 }
 
 /**
